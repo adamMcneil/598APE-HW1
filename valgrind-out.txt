@@ -1,0 +1,278 @@
+==54757== Memcheck, a memory error detector
+==54757== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+==54757== Using Valgrind-3.22.0-bd4db67b1d-20231031 and LibVEX; rerun with -h for copyright info
+==54757== Command: ./main.exe -i inputs/pianoroom.ray --ppm -o output/pianoroom.ppm -H 500 -W 500
+==54757== Parent PID: 30032
+==54757== 
+--54757-- 
+--54757-- Valgrind options:
+--54757--    --leak-check=full
+--54757--    --show-leak-kinds=all
+--54757--    --track-origins=yes
+--54757--    --verbose
+--54757--    --log-file=valgrind-out.txt
+--54757-- Contents of /proc/version:
+--54757--   Linux version 6.8.0-52-generic (buildd@lcy02-amd64-046) (x86_64-linux-gnu-gcc-13 (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0, GNU ld (GNU Binutils for Ubuntu) 2.42) #53-Ubuntu SMP PREEMPT_DYNAMIC Sat Jan 11 00:06:25 UTC 2025
+--54757-- 
+--54757-- Arch and hwcaps: AMD64, LittleEndian, amd64-cx16-lzcnt-rdtscp-sse3-ssse3-avx-avx2-bmi-f16c-rdrand-rdseed
+--54757-- Page sizes: currently 4096, max supported 4096
+--54757-- Valgrind library directory: /usr/libexec/valgrind
+--54757-- Reading syms from /home/adam/git-repos/598APE-HW1/main.exe
+--54757-- Reading syms from /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
+--54757--   Considering /usr/lib/debug/.build-id/1c/8db5f83bba514f8fd5f1fb6d7be975be1bb855.debug ..
+--54757--   .. build-id is valid
+--54757-- Reading syms from /usr/libexec/valgrind/memcheck-amd64-linux
+--54757--    object doesn't have a dynamic symbol table
+--54757-- Scheduler: using generic scheduler lock implementation.
+--54757-- Reading suppressions file: /usr/libexec/valgrind/default.supp
+==54757== embedded gdbserver: reading from /tmp/vgdb-pipe-from-vgdb-to-54757-by-adam-on-???
+==54757== embedded gdbserver: writing to   /tmp/vgdb-pipe-to-vgdb-from-54757-by-adam-on-???
+==54757== embedded gdbserver: shared mem   /tmp/vgdb-pipe-shared-mem-vgdb-54757-by-adam-on-???
+==54757== 
+==54757== TO CONTROL THIS PROCESS USING vgdb (which you probably
+==54757== don't want to do, unless you know exactly what you're doing,
+==54757== or are doing some strange experiment):
+==54757==   /usr/bin/vgdb --pid=54757 ...command...
+==54757== 
+==54757== TO DEBUG THIS PROCESS USING GDB: start GDB like this
+==54757==   /path/to/gdb ./main.exe
+==54757== and then give GDB the following command
+==54757==   target remote | /usr/bin/vgdb --pid=54757
+==54757== --pid is optional if only one valgrind process is running
+==54757== 
+--54757-- REDIR: 0x4028b00 (ld-linux-x86-64.so.2:strlen) redirected to 0x580c2e1a (???)
+--54757-- REDIR: 0x40272b0 (ld-linux-x86-64.so.2:index) redirected to 0x580c2e34 (???)
+--54757-- Reading syms from /usr/libexec/valgrind/vgpreload_core-amd64-linux.so
+--54757-- Reading syms from /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so
+==54757== WARNING: new redirection conflicts with existing -- ignoring it
+--54757--     old: 0x04028b00 (strlen              ) R-> (0000.0) 0x580c2e1a ???
+--54757--     new: 0x04028b00 (strlen              ) R-> (2007.0) 0x0484f340 strlen
+--54757-- REDIR: 0x40274e0 (ld-linux-x86-64.so.2:strcmp) redirected to 0x4850460 (strcmp)
+--54757-- REDIR: 0x4026910 (ld-linux-x86-64.so.2:mempcpy) redirected to 0x4853cd0 (mempcpy)
+--54757-- Reading syms from /usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33
+--54757-- Reading syms from /usr/lib/x86_64-linux-gnu/libm.so.6
+--54757-- Reading syms from /usr/lib/x86_64-linux-gnu/libgcc_s.so.1
+--54757-- Reading syms from /usr/lib/x86_64-linux-gnu/libc.so.6
+--54757--   Considering /usr/lib/debug/.build-id/42/c84c92e6f98126b3e2230ebfdead22c235b667.debug ..
+--54757--   .. build-id is valid
+--54757-- REDIR: 0x4028ca0 (ld-linux-x86-64.so.2:strncmp) redirected to 0x484fc90 (strncmp)
+--54757-- REDIR: 0x4cbd050 (libc.so.6:strnlen) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4cbd0e0 (libc.so.6:strpbrk) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4cbb1a0 (libc.so.6:strcmp) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4cd43b0 (libc.so.6:wcsnlen) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4cba290 (libc.so.6:memset) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4cd3b20 (libc.so.6:wcslen) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4d3f3c0 (libc.so.6:__memcpy_chk) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4cba200 (libc.so.6:memrchr) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4cd4350 (libc.so.6:wcsncpy) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4cb9720 (libc.so.6:memcpy@@GLIBC_2.14) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4cd28e0 (libc.so.6:wcschr) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4cbb090 (libc.so.6:index) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4cbd110 (libc.so.6:rindex) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4cd2990 (libc.so.6:wcscmp) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4cba4b0 (libc.so.6:stpncpy) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4ce0eb0 (libc.so.6:wmemchr) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4cbcef0 (libc.so.6:strncmp) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4cba510 (libc.so.6:strcasecmp) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4cbc310 (libc.so.6:strcspn) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4cd38f0 (libc.so.6:wcscpy) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4cbb020 (libc.so.6:strcat) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4cbcdf0 (libc.so.6:strncasecmp_l) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4cbb110 (libc.so.6:strchrnul) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4cb9630 (libc.so.6:bcmp) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4cbc2a0 (libc.so.6:strcpy) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4cba5b0 (libc.so.6:strcasecmp_l) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4cbccc0 (libc.so.6:strlen) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4cbcf90 (libc.so.6:strncpy) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4ce0f30 (libc.so.6:wmemcmp) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4d3f4e0 (libc.so.6:__memmove_chk) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+==54757== WARNING: new redirection conflicts with existing -- ignoring it
+--54757--     old: 0x04d909d0 (__memcpy_chk_avx_una) R-> (2030.0) 0x04853dd0 __memcpy_chk
+--54757--     new: 0x04d909d0 (__memcpy_chk_avx_una) R-> (2024.0) 0x04853740 __memmove_chk
+--54757-- REDIR: 0x4cba440 (libc.so.6:stpcpy) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4cb9fc0 (libc.so.6:memmove) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+==54757== Preferring higher priority redirection:
+--54757--     old: 0x04d90a00 (__memcpy_avx_unalign) R-> (2018.0) 0x04851580 __memcpy_avx_unaligned_erms
+--54757--     new: 0x04d90a00 (__memcpy_avx_unalign) R-> (2018.1) 0x04852d60 memmove
+--54757-- REDIR: 0x4cb95b0 (libc.so.6:memchr) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4cbd2e0 (libc.so.6:strspn) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4cba0e0 (libc.so.6:mempcpy) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4cbcd50 (libc.so.6:strncasecmp) redirected to 0x483d1c0 (_vgnU_ifunc_wrapper)
+--54757-- REDIR: 0x4d955f0 (libc.so.6:__strrchr_avx2) redirected to 0x484ed20 (rindex)
+--54757-- REDIR: 0x4d93740 (libc.so.6:__strlen_avx2) redirected to 0x484f220 (strlen)
+--54757-- REDIR: 0x4d902a0 (libc.so.6:__memcmp_avx2_movbe) redirected to 0x4852480 (bcmp)
+--54757-- REDIR: 0x4d94820 (libc.so.6:__strncmp_avx2) redirected to 0x484fab0 (strncmp)
+--54757-- REDIR: 0x4cb5650 (libc.so.6:malloc) redirected to 0x48467b0 (malloc)
+--54757-- REDIR: 0x4d92f90 (libc.so.6:__strcmp_avx2) redirected to 0x4850360 (strcmp)
+--54757-- REDIR: 0x4d92b60 (libc.so.6:__strchr_avx2) redirected to 0x484ef00 (index)
+--54757-- REDIR: 0x4d90000 (libc.so.6:__memchr_avx2) redirected to 0x48504e0 (memchr)
+--54757-- REDIR: 0x4d90a00 (libc.so.6:__memcpy_avx_unaligned_erms) redirected to 0x4852d60 (memmove)
+--54757-- REDIR: 0x4d909d0 (libc.so.6:__memcpy_chk_avx_unaligned_erms) redirected to 0x4853dd0 (__memcpy_chk)
+--54757-- REDIR: 0x492e8e0 (libstdc++.so.6:operator new(unsigned long)) redirected to 0x4846f30 (operator new(unsigned long))
+--54757-- REDIR: 0x4cb5d30 (libc.so.6:free) redirected to 0x4849820 (free)
+==54757== 
+==54757== Process terminating with default action of signal 2 (SIGINT)
+==54757==    at 0x1118FB: calcColor(unsigned char*, Autonoma*, Ray, unsigned int) (shape.cpp:59)
+==54757==    by 0x112360: calcColor(unsigned char*, Autonoma*, Ray, unsigned int) (shape.cpp:117)
+==54757==    by 0x10B43E: refresh(Autonoma*) (main.cpp:52)
+==54757==    by 0x10AB2E: main (main.cpp:540)
+==54757== 
+==54757== HEAP SUMMARY:
+==54757==     in use at exit: 3,085,507 bytes in 77 blocks
+==54757==   total heap usage: 91,277 allocs, 91,200 frees, 19,135,987 bytes allocated
+==54757== 
+==54757== Searching for pointers to 77 not-freed blocks
+==54757== Checked 173,552 bytes
+==54757== 
+==54757== 3 bytes in 1 blocks are still reachable in loss record 1 of 22
+==54757==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==54757==    by 0x10C1E5: getColor (main.cpp:26)
+==54757==    by 0x10C1E5: createInputs(char const*) (main.cpp:233)
+==54757==    by 0x10A834: main (main.cpp:532)
+==54757== 
+==54757== 16 bytes in 1 blocks are still reachable in loss record 2 of 22
+==54757==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==54757==    by 0x116109: ImageTexture::ImageTexture(unsigned int, unsigned int) (imagetexture.cpp:161)
+==54757==    by 0x10BA85: parseTexture(_IO_FILE*, bool) (main.cpp:146)
+==54757==    by 0x10C333: createInputs(char const*) (main.cpp:243)
+==54757==    by 0x10A834: main (main.cpp:532)
+==54757== 
+==54757== 24 bytes in 1 blocks are still reachable in loss record 3 of 22
+==54757==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==54757==    by 0x10F66D: Autonoma::addLight(Light*) (light.cpp:70)
+==54757==    by 0x10C242: createInputs(char const*) (main.cpp:234)
+==54757==    by 0x10A834: main (main.cpp:532)
+==54757== 
+==54757== 32 bytes in 1 blocks are still reachable in loss record 4 of 22
+==54757==    at 0x4846FA3: operator new(unsigned long) (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==54757==    by 0x10C1B9: createInputs(char const*) (main.cpp:233)
+==54757==    by 0x10A834: main (main.cpp:532)
+==54757== 
+==54757== 40 bytes in 1 blocks are still reachable in loss record 5 of 22
+==54757==    at 0x4846FA3: operator new(unsigned long) (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==54757==    by 0x10B8BC: parseTexture(_IO_FILE*, bool) (main.cpp:118)
+==54757==    by 0x10BEEE: createInputs(char const*) (main.cpp:215)
+==54757==    by 0x10A834: main (main.cpp:532)
+==54757== 
+==54757== 40 bytes in 1 blocks are still reachable in loss record 6 of 22
+==54757==    at 0x4846FA3: operator new(unsigned long) (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==54757==    by 0x10B8BC: parseTexture(_IO_FILE*, bool) (main.cpp:118)
+==54757==    by 0x10C4E2: createInputs(char const*) (main.cpp:255)
+==54757==    by 0x10A834: main (main.cpp:532)
+==54757== 
+==54757== 40 bytes in 1 blocks are still reachable in loss record 7 of 22
+==54757==    at 0x4846FA3: operator new(unsigned long) (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==54757==    by 0x10B8BC: parseTexture(_IO_FILE*, bool) (main.cpp:118)
+==54757==    by 0x10C9ED: createInputs(char const*) (main.cpp:291)
+==54757==    by 0x10A834: main (main.cpp:532)
+==54757== 
+==54757== 48 bytes in 1 blocks are still reachable in loss record 8 of 22
+==54757==    at 0x4846FA3: operator new(unsigned long) (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==54757==    by 0x10BA70: parseTexture(_IO_FILE*, bool) (main.cpp:146)
+==54757==    by 0x10C333: createInputs(char const*) (main.cpp:243)
+==54757==    by 0x10A834: main (main.cpp:532)
+==54757== 
+==54757== 72 bytes in 3 blocks are still reachable in loss record 9 of 22
+==54757==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==54757==    by 0x10F4B5: Autonoma::addShape(Shape*) (light.cpp:38)
+==54757==    by 0x10C3F7: createInputs(char const*) (main.cpp:245)
+==54757==    by 0x10A834: main (main.cpp:532)
+==54757== 
+==54757== 80 bytes in 1 blocks are still reachable in loss record 10 of 22
+==54757==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==54757==    by 0x111976: calcColor(unsigned char*, Autonoma*, Ray, unsigned int) (shape.cpp:62)
+==54757==    by 0x112360: calcColor(unsigned char*, Autonoma*, Ray, unsigned int) (shape.cpp:117)
+==54757==    by 0x10B43E: refresh(Autonoma*) (main.cpp:52)
+==54757==    by 0x10AB2E: main (main.cpp:540)
+==54757== 
+==54757== 80 bytes in 2 blocks are still reachable in loss record 11 of 22
+==54757==    at 0x4846FA3: operator new(unsigned long) (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==54757==    by 0x10B8BC: parseTexture(_IO_FILE*, bool) (main.cpp:118)
+==54757==    by 0x10C333: createInputs(char const*) (main.cpp:243)
+==54757==    by 0x10A834: main (main.cpp:532)
+==54757== 
+==54757== 176 bytes in 1 blocks are still reachable in loss record 12 of 22
+==54757==    at 0x4846FA3: operator new(unsigned long) (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==54757==    by 0x10C9FA: createInputs(char const*) (main.cpp:292)
+==54757==    by 0x10A834: main (main.cpp:532)
+==54757== 
+==54757== 216 bytes in 1 blocks are still reachable in loss record 13 of 22
+==54757==    at 0x4846FA3: operator new(unsigned long) (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==54757==    by 0x10BF04: createInputs(char const*) (main.cpp:221)
+==54757==    by 0x10A834: main (main.cpp:532)
+==54757== 
+==54757== 248 bytes in 1 blocks are still reachable in loss record 14 of 22
+==54757==    at 0x4846FA3: operator new(unsigned long) (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==54757==    by 0x10C4EF: createInputs(char const*) (main.cpp:256)
+==54757==    by 0x10A834: main (main.cpp:532)
+==54757== 
+==54757== 456 bytes in 19 blocks are still reachable in loss record 15 of 22
+==54757==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==54757==    by 0x10F4B5: Autonoma::addShape(Shape*) (light.cpp:38)
+==54757==    by 0x10C5A6: createInputs(char const*) (main.cpp:293)
+==54757==    by 0x10A834: main (main.cpp:532)
+==54757== 
+==54757== 472 bytes in 1 blocks are still reachable in loss record 16 of 22
+==54757==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==54757==    by 0x4C8DE7E: __fopen_internal (iofopen.c:65)
+==54757==    by 0x4C8DE7E: fopen@@GLIBC_2.2.5 (iofopen.c:86)
+==54757==    by 0x10BE23: createInputs(char const*) (main.cpp:206)
+==54757==    by 0x10A834: main (main.cpp:532)
+==54757== 
+==54757== 680 bytes in 17 blocks are still reachable in loss record 17 of 22
+==54757==    at 0x4846FA3: operator new(unsigned long) (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==54757==    by 0x10B8BC: parseTexture(_IO_FILE*, bool) (main.cpp:118)
+==54757==    by 0x10C6C5: createInputs(char const*) (main.cpp:267)
+==54757==    by 0x10A834: main (main.cpp:532)
+==54757== 
+==54757== 744 bytes in 3 blocks are still reachable in loss record 18 of 22
+==54757==    at 0x4846FA3: operator new(unsigned long) (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==54757==    by 0x10C340: createInputs(char const*) (main.cpp:244)
+==54757==    by 0x10A834: main (main.cpp:532)
+==54757== 
+==54757== 4,096 bytes in 1 blocks are still reachable in loss record 19 of 22
+==54757==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==54757==    by 0x4C8D1B4: _IO_file_doallocate (filedoalloc.c:101)
+==54757==    by 0x4C9D523: _IO_doallocbuf (genops.c:347)
+==54757==    by 0x4C9A883: _IO_file_underflow@@GLIBC_2.2.5 (fileops.c:486)
+==54757==    by 0x4C8EE0F: getdelim (iogetdelim.c:77)
+==54757==    by 0x10BE88: getline (stdio.h:120)
+==54757==    by 0x10BE88: createInputs(char const*) (main.cpp:211)
+==54757==    by 0x10A834: main (main.cpp:532)
+==54757== 
+==54757== 4,216 bytes in 17 blocks are still reachable in loss record 20 of 22
+==54757==    at 0x4846FA3: operator new(unsigned long) (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==54757==    by 0x10C6D2: createInputs(char const*) (main.cpp:268)
+==54757==    by 0x10A834: main (main.cpp:532)
+==54757== 
+==54757== 73,728 bytes in 1 blocks are still reachable in loss record 21 of 22
+==54757==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==54757==    by 0x492A38E: ??? (in /usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33)
+==54757==    by 0x400571E: call_init.part.0 (dl-init.c:74)
+==54757==    by 0x4005823: call_init (dl-init.c:120)
+==54757==    by 0x4005823: _dl_init (dl-init.c:121)
+==54757==    by 0x401F59F: ??? (in /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2)
+==54757==    by 0x9: ???
+==54757==    by 0x1FFEFFFC56: ???
+==54757==    by 0x1FFEFFFC61: ???
+==54757==    by 0x1FFEFFFC64: ???
+==54757==    by 0x1FFEFFFC79: ???
+==54757==    by 0x1FFEFFFC7F: ???
+==54757==    by 0x1FFEFFFC82: ???
+==54757== 
+==54757== 3,000,000 bytes in 1 blocks are still reachable in loss record 22 of 22
+==54757==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==54757==    by 0x10AF9F: __static_initialization_and_destruction_0 (main.cpp:35)
+==54757==    by 0x10AF9F: _GLOBAL__sub_I__Z5tdiffP7timevalS0_ (main.cpp:569)
+==54757==    by 0x4C32303: call_init (libc-start.c:145)
+==54757==    by 0x4C32303: __libc_start_main@@GLIBC_2.34 (libc-start.c:347)
+==54757==    by 0x10AFD4: (below main) (in /home/adam/git-repos/598APE-HW1/main.exe)
+==54757== 
+==54757== LEAK SUMMARY:
+==54757==    definitely lost: 0 bytes in 0 blocks
+==54757==    indirectly lost: 0 bytes in 0 blocks
+==54757==      possibly lost: 0 bytes in 0 blocks
+==54757==    still reachable: 3,085,507 bytes in 77 blocks
+==54757==         suppressed: 0 bytes in 0 blocks
+==54757== 
+==54757== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
