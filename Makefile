@@ -17,3 +17,31 @@ clean:
 	cd ./src && make clean
 	rm -f ./*.exe
 	rm -f ./*.obj
+
+run:
+	make -j
+	./main.exe -i inputs/pianoroom.ray --ppm -o output/pianoroom.ppm -H 500 -W 500
+
+time:
+	make -j
+	sudo perf record -g ./main.exe -i inputs/pianoroom.ray --ppm -o output/pianoroom.ppm -H 500 -W 500
+
+collect:
+	make -j
+	./main.exe -i inputs/pianoroom.ray --ppm -o output/pianoroom.ppm -H 500 -W 500
+	./main.exe -i inputs/pianoroom.ray --ppm -o output/pianoroom.ppm -H 500 -W 500
+	./main.exe -i inputs/pianoroom.ray --ppm -o output/pianoroom.ppm -H 500 -W 500
+
+flame:
+	sudo perf script | ./FlameGraph-master/stackcollapse-perf.pl > out.perf-folded
+	sudo ./FlameGraph-master/flamegraph.pl out.perf-folded > perf.svg
+	sudo firefox perf.svgsudo perf script | ./FlameGraph-master/stackcollapse-perf.pl > out.perf-folded
+
+val:
+	make -j
+	valgrind --leak-check=full \
+	--show-leak-kinds=all \
+	--track-origins=yes \
+	--verbose \
+	--log-file=valgrind-out.txt \
+	./main.exe -i inputs/pianoroom.ray --ppm -o output/pianoroom.ppm -H 500 -W 500
