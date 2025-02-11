@@ -1,8 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-data_set_1 = [5]
-data_set_2 = [4.516315, 4.458738, 4.466770]
+data_set_1 = [4.458084, 4.507959, 4.421250]
+data_set_2 = [4.397300, 4.308150, 4.211561]
 
 all_data = [data_set_1, data_set_2]
 
@@ -11,7 +11,7 @@ means = [np.mean(data) for data in all_data]
 std_devs = [np.std(data) for data in all_data]
 
 # Define categorical x-axis labels
-x_labels = ["Baseline", "Next Optimization"]
+x_labels = ["Baseline", "getLight", ]
 x = np.arange(len(x_labels))  # Numeric positions for categorical labels
 
 plt.errorbar(x, means, yerr=std_devs, capsize=5, linestyle='None', marker='^', color='red')

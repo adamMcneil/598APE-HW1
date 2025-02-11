@@ -100,10 +100,12 @@ void Autonoma::removeLight(LightNode *s) {
 
 void getLight(double *tColor, Autonoma *aut, Vector point, Vector norm,
               unsigned char flip) {
-  tColor[0] = tColor[1] = tColor[2] = 0.;
+  tColor[0] = 0.;
   LightNode *t = aut->lightStart;
+  // INFO: added this variable
+  double normMag = norm.mag();
+  double lightColor[3];
   while (t != NULL) {
-    double lightColor[3];
     lightColor[0] = t->data->color[0] / 255.;
     lightColor[1] = t->data->color[1] / 255.;
     lightColor[2] = t->data->color[2] / 255.;
@@ -115,23 +117,21 @@ void getLight(double *tColor, Autonoma *aut, Vector point, Vector norm,
                                                   lightColor);
       shapeIter = shapeIter->next;
     }
-    double perc = (norm.dot(ra) / (ra.mag() * norm.mag()));
+    double perc = (norm.dot(ra) / (ra.mag() * normMag));
     if (!hit) {
-      if (flip && perc < 0)
-        perc = -perc;
+      if (flip) {
+        perc = std::abs(perc);
+      }
       if (perc > 0) {
-
         tColor[0] += perc * (lightColor[0]);
-        tColor[1] += perc * (lightColor[0]);
-        tColor[2] += perc * (lightColor[0]);
-        if (tColor[0] > 1.)
-          tColor[0] = 1.;
-        if (tColor[1] > 1.)
-          tColor[1] = 1.;
-        if (tColor[2] > 1.)
-          tColor[2] = 1.;
+        if (tColor[0] > 1.0) {
+          tColor[0] = 1.0;
+        }
       }
     }
     t = t->next;
   }
+  // INFO: remove duplicate computations
+  tColor[1] = tColor[0];
+  tColor[2] = tColor[0];
 }
