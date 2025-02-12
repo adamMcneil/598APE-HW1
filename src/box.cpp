@@ -1,4 +1,5 @@
 #include "box.h"
+#include "vector.h"
 
 Box::Box(const Vector &c, Texture *t, double ya, double pi, double ro,
          double tx, double ty)
@@ -12,12 +13,18 @@ double Box::getIntersection(Ray ray) {
   if (time == inf) {
     return time;
   }
-  Vector dist =
-      solveScalers(right, up, vect, ray.point + ray.vector * time - center);
-  return (((dist.x >= 0) ? dist.x : -dist.x) > textureX / 2 ||
-          ((dist.y >= 0) ? dist.y : -dist.y) > textureY / 2)
-             ? inf
-             : time;
+
+  double denom = computeDenom(right, up, vect);
+  Vector C = ray.point + ray.vector * time - center;
+  double x = computeX(up, vect, C, denom);
+  if (x > textureX / 2 || x < -textureX / 2) {
+    return inf;
+  }
+  double y = computeY(right, vect, C, denom);
+  if (y > textureY / 2 || y < -textureY / 2) {
+    return inf;
+  }
+  return time;
 }
 
 bool Box::getLightIntersection(Ray ray, double *fill) {
@@ -27,10 +34,15 @@ bool Box::getLightIntersection(Ray ray, double *fill) {
   if (r <= 0. || r >= 1.) {
     return false;
   }
-  Vector dist =
-      solveScalers(right, up, vect, ray.point + ray.vector * r - center);
-  if (((dist.x >= 0) ? dist.x : -dist.x) > textureX / 2 ||
-      ((dist.y >= 0) ? dist.y : -dist.y) > textureY / 2) {
+
+  double denom = computeDenom(right, up, vect);
+  Vector C = ray.point + ray.vector * r - center;
+  double x = computeX(up, vect, C, denom);
+  if (x > textureX / 2 || x < -textureX / 2) {
+    return false;
+  }
+  double y = computeY(right, vect, C, denom);
+  if (y > textureY / 2 || y < -textureY / 2) {
     return false;
   }
 
@@ -39,8 +51,8 @@ bool Box::getLightIntersection(Ray ray, double *fill) {
   }
   unsigned char temp[4];
   double amb, op, ref;
-  texture->getColor(temp, &amb, &op, &ref, fix(dist.x / textureX - .5),
-                    fix(dist.y / textureY - .5));
+  texture->getColor(temp, &amb, &op, &ref, fix(x / textureX - .5),
+                    fix(y / textureY - .5));
   if (op > 1 - 1E-6) {
     return true;
   }

@@ -1,0 +1,2630 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" width="1200" height="406" onload="init(evt)" viewBox="0 0 1200 406" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<!-- Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples. -->
+<!-- NOTES:  -->
+<defs>
+	<linearGradient id="background" y1="0" y2="1" x1="0" x2="0" >
+		<stop stop-color="#eeeeee" offset="5%" />
+		<stop stop-color="#eeeeb0" offset="95%" />
+	</linearGradient>
+</defs>
+<style type="text/css">
+	text { font-family:Verdana; font-size:12px; fill:rgb(0,0,0); }
+	#search, #ignorecase { opacity:0.1; cursor:pointer; }
+	#search:hover, #search.show, #ignorecase:hover, #ignorecase.show { opacity:1; }
+	#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+	#title { text-anchor:middle; font-size:17px}
+	#unzoom { cursor:pointer; }
+	#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+	.hide { display:none; }
+	.parent { opacity:0.5; }
+</style>
+<script type="text/ecmascript">
+<![CDATA[
+	"use strict";
+	var details, searchbtn, unzoombtn, matchedtxt, svg, searching, currentSearchTerm, ignorecase, ignorecaseBtn;
+	function init(evt) {
+		details = document.getElementById("details").firstChild;
+		searchbtn = document.getElementById("search");
+		ignorecaseBtn = document.getElementById("ignorecase");
+		unzoombtn = document.getElementById("unzoom");
+		matchedtxt = document.getElementById("matched");
+		svg = document.getElementsByTagName("svg")[0];
+		searching = 0;
+		currentSearchTerm = null;
+
+		// use GET parameters to restore a flamegraphs state.
+		var params = get_params();
+		if (params.x && params.y)
+			zoom(find_group(document.querySelector('[x="' + params.x + '"][y="' + params.y + '"]')));
+                if (params.s) search(params.s);
+	}
+
+	// event listeners
+	window.addEventListener("click", function(e) {
+		var target = find_group(e.target);
+		if (target) {
+			if (target.nodeName == "a") {
+				if (e.ctrlKey === false) return;
+				e.preventDefault();
+			}
+			if (target.classList.contains("parent")) unzoom(true);
+			zoom(target);
+			if (!document.querySelector('.parent')) {
+				// we have basically done a clearzoom so clear the url
+				var params = get_params();
+				if (params.x) delete params.x;
+				if (params.y) delete params.y;
+				history.replaceState(null, null, parse_params(params));
+				unzoombtn.classList.add("hide");
+				return;
+			}
+
+			// set parameters for zoom state
+			var el = target.querySelector("rect");
+			if (el && el.attributes && el.attributes.y && el.attributes._orig_x) {
+				var params = get_params()
+				params.x = el.attributes._orig_x.value;
+				params.y = el.attributes.y.value;
+				history.replaceState(null, null, parse_params(params));
+			}
+		}
+		else if (e.target.id == "unzoom") clearzoom();
+		else if (e.target.id == "search") search_prompt();
+		else if (e.target.id == "ignorecase") toggle_ignorecase();
+	}, false)
+
+	// mouse-over for info
+	// show
+	window.addEventListener("mouseover", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = "Function: " + g_to_text(target);
+	}, false)
+
+	// clear
+	window.addEventListener("mouseout", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = ' ';
+	}, false)
+
+	// ctrl-F for search
+	// ctrl-I to toggle case-sensitive search
+	window.addEventListener("keydown",function (e) {
+		if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+			e.preventDefault();
+			search_prompt();
+		}
+		else if (e.ctrlKey && e.keyCode === 73) {
+			e.preventDefault();
+			toggle_ignorecase();
+		}
+	}, false)
+
+	// functions
+	function get_params() {
+		var params = {};
+		var paramsarr = window.location.search.substr(1).split('&');
+		for (var i = 0; i < paramsarr.length; ++i) {
+			var tmp = paramsarr[i].split("=");
+			if (!tmp[0] || !tmp[1]) continue;
+			params[tmp[0]]  = decodeURIComponent(tmp[1]);
+		}
+		return params;
+	}
+	function parse_params(params) {
+		var uri = "?";
+		for (var key in params) {
+			uri += key + '=' + encodeURIComponent(params[key]) + '&';
+		}
+		if (uri.slice(-1) == "&")
+			uri = uri.substring(0, uri.length - 1);
+		if (uri == '?')
+			uri = window.location.href.split('?')[0];
+		return uri;
+	}
+	function find_child(node, selector) {
+		var children = node.querySelectorAll(selector);
+		if (children.length) return children[0];
+	}
+	function find_group(node) {
+		var parent = node.parentElement;
+		if (!parent) return;
+		if (parent.id == "frames") return node;
+		return find_group(parent);
+	}
+	function orig_save(e, attr, val) {
+		if (e.attributes["_orig_" + attr] != undefined) return;
+		if (e.attributes[attr] == undefined) return;
+		if (val == undefined) val = e.attributes[attr].value;
+		e.setAttribute("_orig_" + attr, val);
+	}
+	function orig_load(e, attr) {
+		if (e.attributes["_orig_"+attr] == undefined) return;
+		e.attributes[attr].value = e.attributes["_orig_" + attr].value;
+		e.removeAttribute("_orig_"+attr);
+	}
+	function g_to_text(e) {
+		var text = find_child(e, "title").firstChild.nodeValue;
+		return (text)
+	}
+	function g_to_func(e) {
+		var func = g_to_text(e);
+		// if there's any manipulation we want to do to the function
+		// name before it's searched, do it here before returning.
+		return (func);
+	}
+	function update_text(e) {
+		var r = find_child(e, "rect");
+		var t = find_child(e, "text");
+		var w = parseFloat(r.attributes.width.value) -3;
+		var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+		t.attributes.x.value = parseFloat(r.attributes.x.value) + 3;
+
+		// Smaller than this size won't fit anything
+		if (w < 2 * 12 * 0.59) {
+			t.textContent = "";
+			return;
+		}
+
+		t.textContent = txt;
+		var sl = t.getSubStringLength(0, txt.length);
+		// check if only whitespace or if we can fit the entire string into width w
+		if (/^ *$/.test(txt) || sl < w)
+			return;
+
+		// this isn't perfect, but gives a good starting point
+		// and avoids calling getSubStringLength too often
+		var start = Math.floor((w/sl) * txt.length);
+		for (var x = start; x > 0; x = x-2) {
+			if (t.getSubStringLength(0, x + 2) <= w) {
+				t.textContent = txt.substring(0, x) + "..";
+				return;
+			}
+		}
+		t.textContent = "";
+	}
+
+	// zoom
+	function zoom_reset(e) {
+		if (e.attributes != undefined) {
+			orig_load(e, "x");
+			orig_load(e, "width");
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_reset(c[i]);
+		}
+	}
+	function zoom_child(e, x, ratio) {
+		if (e.attributes != undefined) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = (parseFloat(e.attributes.x.value) - x - 10) * ratio + 10;
+				if (e.tagName == "text")
+					e.attributes.x.value = find_child(e.parentNode, "rect[x]").attributes.x.value + 3;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseFloat(e.attributes.width.value) * ratio;
+			}
+		}
+
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_child(c[i], x - 10, ratio);
+		}
+	}
+	function zoom_parent(e) {
+		if (e.attributes) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = 10;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseInt(svg.width.baseVal.value) - (10 * 2);
+			}
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_parent(c[i]);
+		}
+	}
+	function zoom(node) {
+		var attr = find_child(node, "rect").attributes;
+		var width = parseFloat(attr.width.value);
+		var xmin = parseFloat(attr.x.value);
+		var xmax = parseFloat(xmin + width);
+		var ymin = parseFloat(attr.y.value);
+		var ratio = (svg.width.baseVal.value - 2 * 10) / width;
+
+		// XXX: Workaround for JavaScript float issues (fix me)
+		var fudge = 0.0001;
+
+		unzoombtn.classList.remove("hide");
+
+		var el = document.getElementById("frames").children;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var a = find_child(e, "rect").attributes;
+			var ex = parseFloat(a.x.value);
+			var ew = parseFloat(a.width.value);
+			var upstack;
+			// Is it an ancestor
+			if (0 == 0) {
+				upstack = parseFloat(a.y.value) > ymin;
+			} else {
+				upstack = parseFloat(a.y.value) < ymin;
+			}
+			if (upstack) {
+				// Direct ancestor
+				if (ex <= xmin && (ex+ew+fudge) >= xmax) {
+					e.classList.add("parent");
+					zoom_parent(e);
+					update_text(e);
+				}
+				// not in current path
+				else
+					e.classList.add("hide");
+			}
+			// Children maybe
+			else {
+				// no common path
+				if (ex < xmin || ex + fudge >= xmax) {
+					e.classList.add("hide");
+				}
+				else {
+					zoom_child(e, xmin, ratio);
+					update_text(e);
+				}
+			}
+		}
+		search();
+	}
+	function unzoom(dont_update_text) {
+		unzoombtn.classList.add("hide");
+		var el = document.getElementById("frames").children;
+		for(var i = 0; i < el.length; i++) {
+			el[i].classList.remove("parent");
+			el[i].classList.remove("hide");
+			zoom_reset(el[i]);
+			if(!dont_update_text) update_text(el[i]);
+		}
+		search();
+	}
+	function clearzoom() {
+		unzoom();
+
+		// remove zoom state
+		var params = get_params();
+		if (params.x) delete params.x;
+		if (params.y) delete params.y;
+		history.replaceState(null, null, parse_params(params));
+	}
+
+	// search
+	function toggle_ignorecase() {
+		ignorecase = !ignorecase;
+		if (ignorecase) {
+			ignorecaseBtn.classList.add("show");
+		} else {
+			ignorecaseBtn.classList.remove("show");
+		}
+		reset_search();
+		search();
+	}
+	function reset_search() {
+		var el = document.querySelectorAll("#frames rect");
+		for (var i = 0; i < el.length; i++) {
+			orig_load(el[i], "fill")
+		}
+		var params = get_params();
+		delete params.s;
+		history.replaceState(null, null, parse_params(params));
+	}
+	function search_prompt() {
+		if (!searching) {
+			var term = prompt("Enter a search term (regexp " +
+			    "allowed, eg: ^ext4_)"
+			    + (ignorecase ? ", ignoring case" : "")
+			    + "\nPress Ctrl-i to toggle case sensitivity", "");
+			if (term != null) search(term);
+		} else {
+			reset_search();
+			searching = 0;
+			currentSearchTerm = null;
+			searchbtn.classList.remove("show");
+			searchbtn.firstChild.nodeValue = "Search"
+			matchedtxt.classList.add("hide");
+			matchedtxt.firstChild.nodeValue = ""
+		}
+	}
+	function search(term) {
+		if (term) currentSearchTerm = term;
+		if (currentSearchTerm === null) return;
+
+		var re = new RegExp(currentSearchTerm, ignorecase ? 'i' : '');
+		var el = document.getElementById("frames").children;
+		var matches = new Object();
+		var maxwidth = 0;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var func = g_to_func(e);
+			var rect = find_child(e, "rect");
+			if (func == null || rect == null)
+				continue;
+
+			// Save max width. Only works as we have a root frame
+			var w = parseFloat(rect.attributes.width.value);
+			if (w > maxwidth)
+				maxwidth = w;
+
+			if (func.match(re)) {
+				// highlight
+				var x = parseFloat(rect.attributes.x.value);
+				orig_save(rect, "fill");
+				rect.attributes.fill.value = "rgb(230,0,230)";
+
+				// remember matches
+				if (matches[x] == undefined) {
+					matches[x] = w;
+				} else {
+					if (w > matches[x]) {
+						// overwrite with parent
+						matches[x] = w;
+					}
+				}
+				searching = 1;
+			}
+		}
+		if (!searching)
+			return;
+		var params = get_params();
+		params.s = currentSearchTerm;
+		history.replaceState(null, null, parse_params(params));
+
+		searchbtn.classList.add("show");
+		searchbtn.firstChild.nodeValue = "Reset Search";
+
+		// calculate percent matched, excluding vertical overlap
+		var count = 0;
+		var lastx = -1;
+		var lastw = 0;
+		var keys = Array();
+		for (k in matches) {
+			if (matches.hasOwnProperty(k))
+				keys.push(k);
+		}
+		// sort the matched frames by their x location
+		// ascending, then width descending
+		keys.sort(function(a, b){
+			return a - b;
+		});
+		// Step through frames saving only the biggest bottom-up frames
+		// thanks to the sort order. This relies on the tree property
+		// where children are always smaller than their parents.
+		var fudge = 0.0001;	// JavaScript floating point
+		for (var k in keys) {
+			var x = parseFloat(keys[k]);
+			var w = matches[keys[k]];
+			if (x >= lastx + lastw - fudge) {
+				count += w;
+				lastx = x;
+				lastw = w;
+			}
+		}
+		// display matched percent
+		matchedtxt.classList.remove("hide");
+		var pct = 100 * count / maxwidth;
+		if (pct != 100) pct = pct.toFixed(1)
+		matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+	}
+]]>
+</script>
+<rect x="0.0" y="0" width="1200.0" height="406.0" fill="url(#background)"  />
+<text id="title" x="600.00" y="24" >Flame Graph</text>
+<text id="details" x="10.00" y="389" > </text>
+<text id="unzoom" x="10.00" y="24" class="hide">Reset Zoom</text>
+<text id="search" x="1090.00" y="24" >Search</text>
+<text id="ignorecase" x="1174.00" y="24" >ic</text>
+<text id="matched" x="1090.00" y="389" > </text>
+<g id="frames">
+<g >
+<title>entry_SYSCALL_64_after_hwframe (632,070 samples, 0.02%)</title><rect x="1189.3" y="325" width="0.1" height="15.0" fill="rgb(218,63,15)" rx="2" ry="2" />
+<text  x="1192.27" y="335.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (1,574,705 samples, 0.04%)</title><rect x="611.0" y="197" width="0.4" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="613.97" y="207.5" ></text>
+</g>
+<g >
+<title>_dl_start_user (2,794,309 samples, 0.07%)</title><rect x="1188.5" y="325" width="0.8" height="15.0" fill="rgb(236,145,34)" rx="2" ry="2" />
+<text  x="1191.48" y="335.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (17,710,952 samples, 0.43%)</title><rect x="812.9" y="229" width="5.1" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="815.94" y="239.5" ></text>
+</g>
+<g >
+<title>sysvec_apic_timer_interrupt (687,508 samples, 0.02%)</title><rect x="208.9" y="213" width="0.2" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="211.93" y="223.5" ></text>
+</g>
+<g >
+<title>__mem_cgroup_charge (586,994 samples, 0.01%)</title><rect x="296.5" y="149" width="0.2" height="15.0" fill="rgb(218,60,14)" rx="2" ry="2" />
+<text  x="299.52" y="159.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (637,930 samples, 0.02%)</title><rect x="532.5" y="245" width="0.2" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="535.53" y="255.5" ></text>
+</g>
+<g >
+<title>asm_sysvec_apic_timer_interrupt (956,230 samples, 0.02%)</title><rect x="1150.7" y="261" width="0.3" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="1153.73" y="271.5" ></text>
+</g>
+<g >
+<title>Plane::getIntersection (22,212,010 samples, 0.53%)</title><rect x="511.3" y="261" width="6.3" height="15.0" fill="rgb(232,126,30)" rx="2" ry="2" />
+<text  x="514.34" y="271.5" ></text>
+</g>
+<g >
+<title>vfs_write (957,886 samples, 0.02%)</title><rect x="1189.4" y="181" width="0.3" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="1192.45" y="191.5" ></text>
+</g>
+<g >
+<title>fix (27,266,065 samples, 0.66%)</title><rect x="843.6" y="277" width="7.8" height="15.0" fill="rgb(251,212,50)" rx="2" ry="2" />
+<text  x="846.62" y="287.5" ></text>
+</g>
+<g >
+<title>task_tick_fair (637,874 samples, 0.02%)</title><rect x="496.8" y="85" width="0.2" height="15.0" fill="rgb(217,57,13)" rx="2" ry="2" />
+<text  x="499.80" y="95.5" ></text>
+</g>
+<g >
+<title>fmod@@GLIBC_2.38 (658,735 samples, 0.02%)</title><rect x="637.2" y="261" width="0.1" height="15.0" fill="rgb(205,1,0)" rx="2" ry="2" />
+<text  x="640.16" y="271.5" ></text>
+</g>
+<g >
+<title>asm_sysvec_apic_timer_interrupt (969,023 samples, 0.02%)</title><rect x="369.4" y="277" width="0.3" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="372.43" y="287.5" ></text>
+</g>
+<g >
+<title>main.exe (4,158,036,661 samples, 100.00%)</title><rect x="10.0" y="341" width="1180.0" height="15.0" fill="rgb(216,53,12)" rx="2" ry="2" />
+<text  x="13.00" y="351.5" >main.exe</text>
+</g>
+<g >
+<title>Plane::getIntersection (13,805,236 samples, 0.33%)</title><rect x="299.4" y="261" width="3.9" height="15.0" fill="rgb(232,126,30)" rx="2" ry="2" />
+<text  x="302.41" y="271.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (956,662 samples, 0.02%)</title><rect x="601.0" y="197" width="0.3" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="604.02" y="207.5" ></text>
+</g>
+<g >
+<title>calcColor (1,658,957,366 samples, 39.90%)</title><rect x="369.7" y="277" width="470.8" height="15.0" fill="rgb(209,19,4)" rx="2" ry="2" />
+<text  x="372.70" y="287.5" >calcColor</text>
+</g>
+<g >
+<title>tick_nohz_highres_handler (662,005 samples, 0.02%)</title><rect x="1055.8" y="149" width="0.2" height="15.0" fill="rgb(215,50,11)" rx="2" ry="2" />
+<text  x="1058.80" y="159.5" ></text>
+</g>
+<g >
+<title>__sqrt_finite@GLIBC_2.15 (637,977 samples, 0.02%)</title><rect x="526.3" y="245" width="0.2" height="15.0" fill="rgb(249,204,48)" rx="2" ry="2" />
+<text  x="529.33" y="255.5" ></text>
+</g>
+<g >
+<title>update_process_times (633,883 samples, 0.02%)</title><rect x="739.8" y="117" width="0.2" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="742.82" y="127.5" ></text>
+</g>
+<g >
+<title>handle_pte_fault (906,121 samples, 0.02%)</title><rect x="296.5" y="181" width="0.3" height="15.0" fill="rgb(217,57,13)" rx="2" ry="2" />
+<text  x="299.52" y="191.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (1,591,224 samples, 0.04%)</title><rect x="554.1" y="229" width="0.4" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="557.10" y="239.5" ></text>
+</g>
+<g >
+<title>tick_sched_handle (637,336 samples, 0.02%)</title><rect x="369.4" y="181" width="0.2" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="372.43" y="191.5" ></text>
+</g>
+<g >
+<title>sysvec_apic_timer_interrupt (663,026 samples, 0.02%)</title><rect x="359.7" y="245" width="0.2" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="362.70" y="255.5" ></text>
+</g>
+<g >
+<title>asm_sysvec_apic_timer_interrupt (2,143,793 samples, 0.05%)</title><rect x="167.9" y="245" width="0.6" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="170.89" y="255.5" ></text>
+</g>
+<g >
+<title>std::abs (1,623,035 samples, 0.04%)</title><rect x="1151.7" y="261" width="0.5" height="15.0" fill="rgb(223,84,20)" rx="2" ry="2" />
+<text  x="1154.71" y="271.5" ></text>
+</g>
+<g >
+<title>scheduler_tick (687,307 samples, 0.02%)</title><rect x="603.2" y="85" width="0.2" height="15.0" fill="rgb(246,190,45)" rx="2" ry="2" />
+<text  x="606.20" y="95.5" ></text>
+</g>
+<g >
+<title>solveScalers (1,549,783 samples, 0.04%)</title><rect x="820.2" y="245" width="0.4" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="823.20" y="255.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (5,783,472 samples, 0.14%)</title><rect x="495.2" y="229" width="1.6" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="498.16" y="239.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (2,263,758 samples, 0.05%)</title><rect x="602.6" y="197" width="0.6" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="605.55" y="207.5" ></text>
+</g>
+<g >
+<title>Vector::operator+ (32,832,793 samples, 0.79%)</title><rect x="1004.0" y="245" width="9.3" height="15.0" fill="rgb(227,102,24)" rx="2" ry="2" />
+<text  x="1006.95" y="255.5" ></text>
+</g>
+<g >
+<title>Vector::mag2 (4,315,518 samples, 0.10%)</title><rect x="790.2" y="229" width="1.3" height="15.0" fill="rgb(244,182,43)" rx="2" ry="2" />
+<text  x="793.23" y="239.5" ></text>
+</g>
+<g >
+<title>Vector::dot (3,197,036 samples, 0.08%)</title><rect x="343.8" y="261" width="0.9" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="346.82" y="271.5" ></text>
+</g>
+<g >
+<title>__hrtimer_run_queues (1,614,530 samples, 0.04%)</title><rect x="1019.4" y="181" width="0.4" height="15.0" fill="rgb(237,150,35)" rx="2" ry="2" />
+<text  x="1022.38" y="191.5" ></text>
+</g>
+<g >
+<title>Plane::getIntersection (237,911,373 samples, 5.72%)</title><rect x="101.3" y="261" width="67.6" height="15.0" fill="rgb(232,126,30)" rx="2" ry="2" />
+<text  x="104.34" y="271.5" >Plane::..</text>
+</g>
+<g >
+<title>Vector::Vector (2,182,409 samples, 0.05%)</title><rect x="1149.1" y="245" width="0.6" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="1152.06" y="255.5" ></text>
+</g>
+<g >
+<title>task_tick_fair (634,770 samples, 0.02%)</title><rect x="1147.4" y="101" width="0.1" height="15.0" fill="rgb(217,57,13)" rx="2" ry="2" />
+<text  x="1150.35" y="111.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (1,602,449 samples, 0.04%)</title><rect x="558.1" y="213" width="0.5" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="561.14" y="223.5" ></text>
+</g>
+<g >
+<title>update_process_times (612,580 samples, 0.01%)</title><rect x="534.4" y="149" width="0.2" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="537.43" y="159.5" ></text>
+</g>
+<g >
+<title>scheduler_tick (637,336 samples, 0.02%)</title><rect x="369.4" y="149" width="0.2" height="15.0" fill="rgb(246,190,45)" rx="2" ry="2" />
+<text  x="372.43" y="159.5" ></text>
+</g>
+<g >
+<title>Box::getLightIntersection (104,582,221 samples, 2.52%)</title><rect x="581.9" y="229" width="29.7" height="15.0" fill="rgb(212,32,7)" rx="2" ry="2" />
+<text  x="584.91" y="239.5" >Bo..</text>
+</g>
+<g >
+<title>__atan2 (2,533,201 samples, 0.06%)</title><rect x="337.0" y="261" width="0.7" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="340.00" y="271.5" ></text>
+</g>
+<g >
+<title>Vector::dot (13,953,768 samples, 0.34%)</title><rect x="1071.1" y="245" width="4.0" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="1074.13" y="255.5" ></text>
+</g>
+<g >
+<title>__hrtimer_run_queues (930,754 samples, 0.02%)</title><rect x="1178.6" y="197" width="0.2" height="15.0" fill="rgb(237,150,35)" rx="2" ry="2" />
+<text  x="1181.55" y="207.5" ></text>
+</g>
+<g >
+<title>std::numeric_limits&lt;double&gt;::infinity (931,973 samples, 0.02%)</title><rect x="503.3" y="245" width="0.3" height="15.0" fill="rgb(249,202,48)" rx="2" ry="2" />
+<text  x="506.31" y="255.5" ></text>
+</g>
+<g >
+<title>asm_sysvec_apic_timer_interrupt (687,508 samples, 0.02%)</title><rect x="208.9" y="229" width="0.2" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="211.93" y="239.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (612,683 samples, 0.01%)</title><rect x="511.2" y="229" width="0.1" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="514.16" y="239.5" ></text>
+</g>
+<g >
+<title>Plane::getIntersection (31,585,300 samples, 0.76%)</title><rect x="545.1" y="229" width="9.0" height="15.0" fill="rgb(232,126,30)" rx="2" ry="2" />
+<text  x="548.13" y="239.5" ></text>
+</g>
+<g >
+<title>tick_sched_handle (597,688 samples, 0.01%)</title><rect x="819.9" y="149" width="0.2" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="822.93" y="159.5" ></text>
+</g>
+<g >
+<title>timekeeping_advance (611,594 samples, 0.01%)</title><rect x="444.7" y="85" width="0.2" height="15.0" fill="rgb(227,104,25)" rx="2" ry="2" />
+<text  x="447.74" y="95.5" ></text>
+</g>
+<g >
+<title>Sphere::getLightIntersection (3,235,879 samples, 0.08%)</title><rect x="616.2" y="229" width="0.9" height="15.0" fill="rgb(207,13,3)" rx="2" ry="2" />
+<text  x="619.18" y="239.5" ></text>
+</g>
+<g >
+<title>hrtimer_interrupt (637,874 samples, 0.02%)</title><rect x="496.8" y="181" width="0.2" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="499.80" y="191.5" ></text>
+</g>
+<g >
+<title>__handle_mm_fault (1,224,571 samples, 0.03%)</title><rect x="296.4" y="197" width="0.4" height="15.0" fill="rgb(207,9,2)" rx="2" ry="2" />
+<text  x="299.43" y="207.5" ></text>
+</g>
+<g >
+<title>Vector::dot (1,784,639 samples, 0.04%)</title><rect x="524.8" y="261" width="0.5" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="527.81" y="271.5" ></text>
+</g>
+<g >
+<title>do_syscall_64 (634,447 samples, 0.02%)</title><rect x="1189.7" y="261" width="0.2" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="1192.72" y="271.5" ></text>
+</g>
+<g >
+<title>Vector::operator* (38,006,956 samples, 0.91%)</title><rect x="179.0" y="261" width="10.8" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="182.01" y="271.5" ></text>
+</g>
+<g >
+<title>filemap_fdatawrite_wbc (634,447 samples, 0.02%)</title><rect x="1189.7" y="117" width="0.2" height="15.0" fill="rgb(210,25,6)" rx="2" ry="2" />
+<text  x="1192.72" y="127.5" ></text>
+</g>
+<g >
+<title>scheduler_tick (597,688 samples, 0.01%)</title><rect x="819.9" y="117" width="0.2" height="15.0" fill="rgb(246,190,45)" rx="2" ry="2" />
+<text  x="822.93" y="127.5" ></text>
+</g>
+<g >
+<title>tick_nohz_highres_handler (612,580 samples, 0.01%)</title><rect x="534.4" y="181" width="0.2" height="15.0" fill="rgb(215,50,11)" rx="2" ry="2" />
+<text  x="537.43" y="191.5" ></text>
+</g>
+<g >
+<title>Plane::getNormal (662,967 samples, 0.02%)</title><rect x="517.7" y="261" width="0.2" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="520.73" y="271.5" ></text>
+</g>
+<g >
+<title>Vector::dot (2,472,287 samples, 0.06%)</title><rect x="522.2" y="245" width="0.7" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="525.21" y="255.5" ></text>
+</g>
+<g >
+<title>entry_SYSCALL_64_after_hwframe (957,886 samples, 0.02%)</title><rect x="1189.4" y="261" width="0.3" height="15.0" fill="rgb(218,63,15)" rx="2" ry="2" />
+<text  x="1192.45" y="271.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (2,901,172 samples, 0.07%)</title><rect x="566.2" y="213" width="0.8" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="569.16" y="223.5" ></text>
+</g>
+<g >
+<title>_dl_map_object_deps (550,630 samples, 0.01%)</title><rect x="1188.6" y="261" width="0.1" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="1191.56" y="271.5" ></text>
+</g>
+<g >
+<title>__sysvec_apic_timer_interrupt (663,026 samples, 0.02%)</title><rect x="359.7" y="229" width="0.2" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="362.70" y="239.5" ></text>
+</g>
+<g >
+<title>calcColor (334,498,143 samples, 8.04%)</title><rect x="534.6" y="261" width="94.9" height="15.0" fill="rgb(209,19,4)" rx="2" ry="2" />
+<text  x="537.61" y="271.5" >calcColor</text>
+</g>
+<g >
+<title>__sqrt (978,605 samples, 0.02%)</title><rect x="624.7" y="229" width="0.3" height="15.0" fill="rgb(227,103,24)" rx="2" ry="2" />
+<text  x="627.68" y="239.5" ></text>
+</g>
+<g >
+<title>Vector::operator* (59,835,647 samples, 1.44%)</title><rect x="1109.6" y="261" width="17.0" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="1112.61" y="271.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (20,248,947 samples, 0.49%)</title><rect x="1098.7" y="261" width="5.7" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="1101.70" y="271.5" ></text>
+</g>
+<g >
+<title>exit_mmap (632,070 samples, 0.02%)</title><rect x="1189.3" y="181" width="0.1" height="15.0" fill="rgb(236,143,34)" rx="2" ry="2" />
+<text  x="1192.27" y="191.5" ></text>
+</g>
+<g >
+<title>Sphere::getColor (3,766,035 samples, 0.09%)</title><rect x="336.7" y="277" width="1.0" height="15.0" fill="rgb(223,83,20)" rx="2" ry="2" />
+<text  x="339.65" y="287.5" ></text>
+</g>
+<g >
+<title>hrtimer_interrupt (687,508 samples, 0.02%)</title><rect x="208.9" y="181" width="0.2" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="211.93" y="191.5" ></text>
+</g>
+<g >
+<title>tick_sched_do_timer (611,594 samples, 0.01%)</title><rect x="444.7" y="133" width="0.2" height="15.0" fill="rgb(227,104,25)" rx="2" ry="2" />
+<text  x="447.74" y="143.5" ></text>
+</g>
+<g >
+<title>Vector::operator+ (23,993,295 samples, 0.58%)</title><rect x="727.5" y="229" width="6.8" height="15.0" fill="rgb(227,102,24)" rx="2" ry="2" />
+<text  x="730.48" y="239.5" ></text>
+</g>
+<g >
+<title>openaux (550,630 samples, 0.01%)</title><rect x="1188.6" y="229" width="0.1" height="15.0" fill="rgb(252,217,52)" rx="2" ry="2" />
+<text  x="1191.56" y="239.5" ></text>
+</g>
+<g >
+<title>std::numeric_limits&lt;double&gt;::infinity (1,271,792 samples, 0.03%)</title><rect x="168.5" y="245" width="0.4" height="15.0" fill="rgb(249,202,48)" rx="2" ry="2" />
+<text  x="171.50" y="255.5" ></text>
+</g>
+<g >
+<title>__hrtimer_run_queues (1,885,245 samples, 0.05%)</title><rect x="444.7" y="165" width="0.6" height="15.0" fill="rgb(237,150,35)" rx="2" ry="2" />
+<text  x="447.74" y="175.5" ></text>
+</g>
+<g >
+<title>tick_program_event (585,521 samples, 0.01%)</title><rect x="168.3" y="181" width="0.2" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="171.33" y="191.5" ></text>
+</g>
+<g >
+<title>Ray::Ray (3,803,124 samples, 0.09%)</title><rect x="518.0" y="261" width="1.1" height="15.0" fill="rgb(238,153,36)" rx="2" ry="2" />
+<text  x="521.01" y="271.5" ></text>
+</g>
+<g >
+<title>Vector::mag (616,774 samples, 0.01%)</title><rect x="353.3" y="261" width="0.2" height="15.0" fill="rgb(217,58,14)" rx="2" ry="2" />
+<text  x="356.32" y="271.5" ></text>
+</g>
+<g >
+<title>sysvec_apic_timer_interrupt (1,250,403 samples, 0.03%)</title><rect x="1090.3" y="229" width="0.3" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="1093.29" y="239.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (648,672 samples, 0.02%)</title><rect x="524.6" y="261" width="0.2" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="527.62" y="271.5" ></text>
+</g>
+<g >
+<title>tick_sched_handle (951,287 samples, 0.02%)</title><rect x="219.7" y="165" width="0.3" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="222.69" y="175.5" ></text>
+</g>
+<g >
+<title>timekeeping_update (611,594 samples, 0.01%)</title><rect x="444.7" y="69" width="0.2" height="15.0" fill="rgb(238,152,36)" rx="2" ry="2" />
+<text  x="447.74" y="79.5" ></text>
+</g>
+<g >
+<title>exc_page_fault (1,538,464 samples, 0.04%)</title><rect x="296.3" y="245" width="0.5" height="15.0" fill="rgb(212,35,8)" rx="2" ry="2" />
+<text  x="299.34" y="255.5" ></text>
+</g>
+<g >
+<title>scheduler_tick (634,770 samples, 0.02%)</title><rect x="1147.4" y="117" width="0.1" height="15.0" fill="rgb(246,190,45)" rx="2" ry="2" />
+<text  x="1150.35" y="127.5" ></text>
+</g>
+<g >
+<title>malloc (1,005,791 samples, 0.02%)</title><rect x="628.7" y="245" width="0.3" height="15.0" fill="rgb(230,119,28)" rx="2" ry="2" />
+<text  x="631.70" y="255.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (1,271,484 samples, 0.03%)</title><rect x="343.5" y="261" width="0.3" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="346.46" y="271.5" ></text>
+</g>
+<g >
+<title>Vector::dot (2,278,160 samples, 0.05%)</title><rect x="613.4" y="213" width="0.7" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="616.42" y="223.5" ></text>
+</g>
+<g >
+<title>x64_sys_call (634,447 samples, 0.02%)</title><rect x="1189.7" y="245" width="0.2" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="1192.72" y="255.5" ></text>
+</g>
+<g >
+<title>Plane::getColor (27,365,502 samples, 0.66%)</title><rect x="503.6" y="261" width="7.7" height="15.0" fill="rgb(241,169,40)" rx="2" ry="2" />
+<text  x="506.57" y="271.5" ></text>
+</g>
+<g >
+<title>__hrtimer_run_queues (634,802 samples, 0.02%)</title><rect x="348.9" y="197" width="0.1" height="15.0" fill="rgb(237,150,35)" rx="2" ry="2" />
+<text  x="351.85" y="207.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (12,022,163 samples, 0.29%)</title><rect x="700.1" y="229" width="3.4" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="703.08" y="239.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (5,131,005 samples, 0.12%)</title><rect x="20.9" y="293" width="1.5" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="23.91" y="303.5" ></text>
+</g>
+<g >
+<title>solveScalers (254,562,062 samples, 6.12%)</title><rect x="220.0" y="261" width="72.2" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="222.96" y="271.5" >solveSca..</text>
+</g>
+<g >
+<title>Vector::operator+ (4,479,070 samples, 0.11%)</title><rect x="573.6" y="245" width="1.3" height="15.0" fill="rgb(227,102,24)" rx="2" ry="2" />
+<text  x="576.61" y="255.5" ></text>
+</g>
+<g >
+<title>__GI___libc_write (957,886 samples, 0.02%)</title><rect x="1189.4" y="277" width="0.3" height="15.0" fill="rgb(217,57,13)" rx="2" ry="2" />
+<text  x="1192.45" y="287.5" ></text>
+</g>
+<g >
+<title>__hrtimer_run_queues (633,883 samples, 0.02%)</title><rect x="739.8" y="165" width="0.2" height="15.0" fill="rgb(237,150,35)" rx="2" ry="2" />
+<text  x="742.82" y="175.5" ></text>
+</g>
+<g >
+<title>hrtimer_interrupt (1,614,530 samples, 0.04%)</title><rect x="1019.4" y="197" width="0.4" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="1022.38" y="207.5" ></text>
+</g>
+<g >
+<title>getLight (169,991,374 samples, 4.09%)</title><rect x="576.8" y="245" width="48.3" height="15.0" fill="rgb(240,163,39)" rx="2" ry="2" />
+<text  x="579.81" y="255.5" >getL..</text>
+</g>
+<g >
+<title>scheduler_tick (981,096 samples, 0.02%)</title><rect x="445.0" y="101" width="0.3" height="15.0" fill="rgb(246,190,45)" rx="2" ry="2" />
+<text  x="448.00" y="111.5" ></text>
+</g>
+<g >
+<title>hrtimer_interrupt (661,427 samples, 0.02%)</title><rect x="765.8" y="165" width="0.2" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="768.77" y="175.5" ></text>
+</g>
+<g >
+<title>tick_sched_handle (633,883 samples, 0.02%)</title><rect x="739.8" y="133" width="0.2" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="742.82" y="143.5" ></text>
+</g>
+<g >
+<title>__hrtimer_run_queues (687,307 samples, 0.02%)</title><rect x="603.2" y="149" width="0.2" height="15.0" fill="rgb(237,150,35)" rx="2" ry="2" />
+<text  x="606.20" y="159.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (637,938 samples, 0.02%)</title><rect x="303.3" y="261" width="0.2" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="306.33" y="271.5" ></text>
+</g>
+<g >
+<title>scheduler_tick (633,883 samples, 0.02%)</title><rect x="739.8" y="101" width="0.2" height="15.0" fill="rgb(246,190,45)" rx="2" ry="2" />
+<text  x="742.82" y="111.5" ></text>
+</g>
+<g >
+<title>Plane::getColor (43,031,029 samples, 1.03%)</title><rect x="308.2" y="277" width="12.2" height="15.0" fill="rgb(241,169,40)" rx="2" ry="2" />
+<text  x="311.16" y="287.5" ></text>
+</g>
+<g >
+<title>ext4_release_file (634,447 samples, 0.02%)</title><rect x="1189.7" y="181" width="0.2" height="15.0" fill="rgb(225,92,22)" rx="2" ry="2" />
+<text  x="1192.72" y="191.5" ></text>
+</g>
+<g >
+<title>tick_sched_handle (612,580 samples, 0.01%)</title><rect x="534.4" y="165" width="0.2" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="537.43" y="175.5" ></text>
+</g>
+<g >
+<title>raw_notifier_call_chain (611,594 samples, 0.01%)</title><rect x="444.7" y="53" width="0.2" height="15.0" fill="rgb(221,73,17)" rx="2" ry="2" />
+<text  x="447.74" y="63.5" ></text>
+</g>
+<g >
+<title>_int_free (1,594,478 samples, 0.04%)</title><rect x="630.2" y="245" width="0.4" height="15.0" fill="rgb(247,196,46)" rx="2" ry="2" />
+<text  x="633.17" y="255.5" ></text>
+</g>
+<g >
+<title>asm_sysvec_apic_timer_interrupt (981,455 samples, 0.02%)</title><rect x="496.8" y="229" width="0.3" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="499.80" y="239.5" ></text>
+</g>
+<g >
+<title>fix (23,039,609 samples, 0.55%)</title><rect x="630.6" y="261" width="6.6" height="15.0" fill="rgb(251,212,50)" rx="2" ry="2" />
+<text  x="633.62" y="271.5" ></text>
+</g>
+<g >
+<title>Vector::operator+ (11,271,355 samples, 0.27%)</title><rect x="621.1" y="229" width="3.2" height="15.0" fill="rgb(227,102,24)" rx="2" ry="2" />
+<text  x="624.11" y="239.5" ></text>
+</g>
+<g >
+<title>__hrtimer_run_queues (637,336 samples, 0.02%)</title><rect x="369.4" y="213" width="0.2" height="15.0" fill="rgb(237,150,35)" rx="2" ry="2" />
+<text  x="372.43" y="223.5" ></text>
+</g>
+<g >
+<title>main (1,913,967 samples, 0.05%)</title><rect x="1189.4" y="325" width="0.6" height="15.0" fill="rgb(243,179,42)" rx="2" ry="2" />
+<text  x="1192.45" y="335.5" ></text>
+</g>
+<g >
+<title>do_syscall_64 (957,886 samples, 0.02%)</title><rect x="1189.4" y="245" width="0.3" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="1192.45" y="255.5" ></text>
+</g>
+<g >
+<title>do_user_addr_fault (662,419 samples, 0.02%)</title><rect x="308.0" y="229" width="0.2" height="15.0" fill="rgb(228,108,25)" rx="2" ry="2" />
+<text  x="310.97" y="239.5" ></text>
+</g>
+<g >
+<title>_dl_catch_exception (550,630 samples, 0.01%)</title><rect x="1188.6" y="245" width="0.1" height="15.0" fill="rgb(253,223,53)" rx="2" ry="2" />
+<text  x="1191.56" y="255.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (4,237,608 samples, 0.10%)</title><rect x="623.1" y="213" width="1.2" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="626.11" y="223.5" ></text>
+</g>
+<g >
+<title>asm_sysvec_apic_timer_interrupt (635,099 samples, 0.02%)</title><rect x="1003.8" y="229" width="0.2" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="1006.77" y="239.5" ></text>
+</g>
+<g >
+<title>Plane::getIntersection (125,941,186 samples, 3.03%)</title><rect x="409.7" y="245" width="35.7" height="15.0" fill="rgb(232,126,30)" rx="2" ry="2" />
+<text  x="412.71" y="255.5" >Pla..</text>
+</g>
+<g >
+<title>Vector::Vector (637,697 samples, 0.02%)</title><rect x="529.3" y="245" width="0.2" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="532.30" y="255.5" ></text>
+</g>
+<g >
+<title>free@plt (612,639 samples, 0.01%)</title><rect x="851.5" y="277" width="0.1" height="15.0" fill="rgb(229,112,26)" rx="2" ry="2" />
+<text  x="854.45" y="287.5" ></text>
+</g>
+<g >
+<title>__hrtimer_run_queues (612,580 samples, 0.01%)</title><rect x="534.4" y="197" width="0.2" height="15.0" fill="rgb(237,150,35)" rx="2" ry="2" />
+<text  x="537.43" y="207.5" ></text>
+</g>
+<g >
+<title>Vector::operator+ (8,842,281 samples, 0.21%)</title><rect x="22.5" y="293" width="2.6" height="15.0" fill="rgb(227,102,24)" rx="2" ry="2" />
+<text  x="25.54" y="303.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (2,604,167 samples, 0.06%)</title><rect x="593.3" y="213" width="0.7" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="596.30" y="223.5" ></text>
+</g>
+<g >
+<title>exit_mm (632,070 samples, 0.02%)</title><rect x="1189.3" y="229" width="0.1" height="15.0" fill="rgb(236,144,34)" rx="2" ry="2" />
+<text  x="1192.27" y="239.5" ></text>
+</g>
+<g >
+<title>Vector::operator- (7,902,193 samples, 0.19%)</title><rect x="1147.5" y="261" width="2.3" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="1150.53" y="271.5" ></text>
+</g>
+<g >
+<title>tick_nohz_highres_handler (1,885,245 samples, 0.05%)</title><rect x="444.7" y="149" width="0.6" height="15.0" fill="rgb(215,50,11)" rx="2" ry="2" />
+<text  x="447.74" y="159.5" ></text>
+</g>
+<g >
+<title>__sqrt_finite@GLIBC_2.15 (1,291,169 samples, 0.03%)</title><rect x="353.6" y="261" width="0.4" height="15.0" fill="rgb(249,204,48)" rx="2" ry="2" />
+<text  x="356.59" y="271.5" ></text>
+</g>
+<g >
+<title>tick_sched_handle (637,874 samples, 0.02%)</title><rect x="496.8" y="133" width="0.2" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="499.80" y="143.5" ></text>
+</g>
+<g >
+<title>std::numeric_limits&lt;double&gt;::infinity (6,933,782 samples, 0.17%)</title><rect x="838.3" y="261" width="2.0" height="15.0" fill="rgb(249,202,48)" rx="2" ry="2" />
+<text  x="841.34" y="271.5" ></text>
+</g>
+<g >
+<title>_IO_fwrite (957,886 samples, 0.02%)</title><rect x="1189.4" y="309" width="0.3" height="15.0" fill="rgb(210,23,5)" rx="2" ry="2" />
+<text  x="1192.45" y="319.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (2,211,437 samples, 0.05%)</title><rect x="313.0" y="245" width="0.6" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="315.97" y="255.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (8,275,645 samples, 0.20%)</title><rect x="804.0" y="229" width="2.4" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="807.05" y="239.5" ></text>
+</g>
+<g >
+<title>solveScalers (6,426,685 samples, 0.15%)</title><rect x="305.4" y="261" width="1.8" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="308.41" y="271.5" ></text>
+</g>
+<g >
+<title>tick_nohz_highres_handler (637,874 samples, 0.02%)</title><rect x="496.8" y="149" width="0.2" height="15.0" fill="rgb(215,50,11)" rx="2" ry="2" />
+<text  x="499.80" y="159.5" ></text>
+</g>
+<g >
+<title>__hrtimer_run_queues (634,770 samples, 0.02%)</title><rect x="1147.4" y="181" width="0.1" height="15.0" fill="rgb(237,150,35)" rx="2" ry="2" />
+<text  x="1150.35" y="191.5" ></text>
+</g>
+<g >
+<title>hrtimer_interrupt (634,802 samples, 0.02%)</title><rect x="348.9" y="213" width="0.1" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="351.85" y="223.5" ></text>
+</g>
+<g >
+<title>asm_sysvec_apic_timer_interrupt (1,250,403 samples, 0.03%)</title><rect x="1090.3" y="245" width="0.3" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="1093.29" y="255.5" ></text>
+</g>
+<g >
+<title>update_process_times (662,005 samples, 0.02%)</title><rect x="1055.8" y="117" width="0.2" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="1058.80" y="127.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (638,100 samples, 0.02%)</title><rect x="304.5" y="245" width="0.2" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="307.51" y="255.5" ></text>
+</g>
+<g >
+<title>__fput_sync (634,447 samples, 0.02%)</title><rect x="1189.7" y="213" width="0.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="1192.72" y="223.5" ></text>
+</g>
+<g >
+<title>Vector::operator- (3,842,954 samples, 0.09%)</title><rect x="506.3" y="245" width="1.1" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="509.26" y="255.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (1,298,789 samples, 0.03%)</title><rect x="319.9" y="245" width="0.4" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="322.91" y="255.5" ></text>
+</g>
+<g >
+<title>Vector::operator- (1,286,358 samples, 0.03%)</title><rect x="624.3" y="229" width="0.4" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="627.31" y="239.5" ></text>
+</g>
+<g >
+<title>Disk::getLightIntersection (17,797,728 samples, 0.43%)</title><rect x="1056.0" y="261" width="5.0" height="15.0" fill="rgb(229,110,26)" rx="2" ry="2" />
+<text  x="1058.99" y="271.5" ></text>
+</g>
+<g >
+<title>solveScalers (4,436,919 samples, 0.11%)</title><rect x="1182.6" y="277" width="1.3" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="1185.64" y="287.5" ></text>
+</g>
+<g >
+<title>getLight (1,059,049,053 samples, 25.47%)</title><rect x="851.6" y="277" width="300.6" height="15.0" fill="rgb(240,163,39)" rx="2" ry="2" />
+<text  x="854.63" y="287.5" >getLight</text>
+</g>
+<g >
+<title>sysvec_apic_timer_interrupt (1,614,530 samples, 0.04%)</title><rect x="1019.4" y="229" width="0.4" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="1022.38" y="239.5" ></text>
+</g>
+<g >
+<title>hrtimer_interrupt (2,143,793 samples, 0.05%)</title><rect x="167.9" y="197" width="0.6" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="170.89" y="207.5" ></text>
+</g>
+<g >
+<title>Box::getIntersection (383,970,977 samples, 9.23%)</title><rect x="389.8" y="261" width="109.0" height="15.0" fill="rgb(217,59,14)" rx="2" ry="2" />
+<text  x="392.84" y="271.5" >Box::getInter..</text>
+</g>
+<g >
+<title>reweight_entity (633,544 samples, 0.02%)</title><rect x="1019.5" y="69" width="0.2" height="15.0" fill="rgb(253,222,53)" rx="2" ry="2" />
+<text  x="1022.47" y="79.5" ></text>
+</g>
+<g >
+<title>Vector::operator+ (40,800,342 samples, 0.98%)</title><rect x="806.5" y="245" width="11.6" height="15.0" fill="rgb(227,102,24)" rx="2" ry="2" />
+<text  x="809.49" y="255.5" ></text>
+</g>
+<g >
+<title>do_exit (632,070 samples, 0.02%)</title><rect x="1189.3" y="245" width="0.1" height="15.0" fill="rgb(231,122,29)" rx="2" ry="2" />
+<text  x="1192.27" y="255.5" ></text>
+</g>
+<g >
+<title>Vector::operator- (5,664,441 samples, 0.14%)</title><rect x="347.2" y="261" width="1.7" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="350.25" y="271.5" ></text>
+</g>
+<g >
+<title>__sysvec_apic_timer_interrupt (637,874 samples, 0.02%)</title><rect x="496.8" y="197" width="0.2" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="499.80" y="207.5" ></text>
+</g>
+<g >
+<title>_dl_lookup_symbol_x (849,133 samples, 0.02%)</title><rect x="1188.7" y="245" width="0.3" height="15.0" fill="rgb(211,28,6)" rx="2" ry="2" />
+<text  x="1191.71" y="255.5" ></text>
+</g>
+<g >
+<title>update_process_times (687,307 samples, 0.02%)</title><rect x="603.2" y="101" width="0.2" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="606.20" y="111.5" ></text>
+</g>
+<g >
+<title>tick_sched_handle (1,558,272 samples, 0.04%)</title><rect x="167.9" y="149" width="0.4" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="170.89" y="159.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (25,882,088 samples, 0.62%)</title><rect x="168.9" y="261" width="7.3" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="171.86" y="271.5" ></text>
+</g>
+<g >
+<title>ext4_writepages (634,447 samples, 0.02%)</title><rect x="1189.7" y="85" width="0.2" height="15.0" fill="rgb(240,165,39)" rx="2" ry="2" />
+<text  x="1192.72" y="95.5" ></text>
+</g>
+<g >
+<title>[unknown] (4,152,696,315 samples, 99.87%)</title><rect x="10.0" y="325" width="1178.5" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="13.00" y="335.5" >[unknown]</text>
+</g>
+<g >
+<title>__sqrt_finite@GLIBC_2.15 (931,476 samples, 0.02%)</title><rect x="819.7" y="245" width="0.2" height="15.0" fill="rgb(249,204,48)" rx="2" ry="2" />
+<text  x="822.67" y="255.5" ></text>
+</g>
+<g >
+<title>solveScalers (1,274,578 samples, 0.03%)</title><rect x="838.0" y="261" width="0.3" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="840.98" y="271.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (5,899,295 samples, 0.14%)</title><rect x="792.6" y="245" width="1.7" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="795.62" y="255.5" ></text>
+</g>
+<g >
+<title>Disk::getLightIntersection (9,552,852 samples, 0.23%)</title><rect x="766.1" y="245" width="2.7" height="15.0" fill="rgb(229,110,26)" rx="2" ry="2" />
+<text  x="769.14" y="255.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (2,848,014 samples, 0.07%)</title><rect x="1181.8" y="261" width="0.8" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="1184.83" y="271.5" ></text>
+</g>
+<g >
+<title>ksys_write (957,886 samples, 0.02%)</title><rect x="1189.4" y="197" width="0.3" height="15.0" fill="rgb(205,4,1)" rx="2" ry="2" />
+<text  x="1192.45" y="207.5" ></text>
+</g>
+<g >
+<title>x64_sys_call (632,070 samples, 0.02%)</title><rect x="1189.3" y="293" width="0.1" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="1192.27" y="303.5" ></text>
+</g>
+<g >
+<title>Plane::getColor (5,216,034 samples, 0.13%)</title><rect x="568.5" y="245" width="1.4" height="15.0" fill="rgb(241,169,40)" rx="2" ry="2" />
+<text  x="571.47" y="255.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (612,352 samples, 0.01%)</title><rect x="789.3" y="229" width="0.2" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="792.34" y="239.5" ></text>
+</g>
+<g >
+<title>__ieee754_atan2_fma (2,533,201 samples, 0.06%)</title><rect x="337.0" y="245" width="0.7" height="15.0" fill="rgb(213,40,9)" rx="2" ry="2" />
+<text  x="340.00" y="255.5" ></text>
+</g>
+<g >
+<title>asm_sysvec_apic_timer_interrupt (634,802 samples, 0.02%)</title><rect x="348.9" y="261" width="0.1" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="351.85" y="271.5" ></text>
+</g>
+<g >
+<title>Sphere::getNormal (1,237,295 samples, 0.03%)</title><rect x="349.5" y="277" width="0.3" height="15.0" fill="rgb(238,153,36)" rx="2" ry="2" />
+<text  x="352.49" y="287.5" ></text>
+</g>
+<g >
+<title>Vector::dot (4,072,446 samples, 0.10%)</title><rect x="350.1" y="277" width="1.2" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="353.11" y="287.5" ></text>
+</g>
+<g >
+<title>__hrtimer_run_queues (597,688 samples, 0.01%)</title><rect x="819.9" y="181" width="0.2" height="15.0" fill="rgb(237,150,35)" rx="2" ry="2" />
+<text  x="822.93" y="191.5" ></text>
+</g>
+<g >
+<title>tick_sched_handle (930,754 samples, 0.02%)</title><rect x="1178.6" y="165" width="0.2" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="1181.55" y="175.5" ></text>
+</g>
+<g >
+<title>Disk::getIntersection (638,160 samples, 0.02%)</title><rect x="18.1" y="293" width="0.1" height="15.0" fill="rgb(234,137,32)" rx="2" ry="2" />
+<text  x="21.06" y="303.5" ></text>
+</g>
+<g >
+<title>Vector::mag2 (4,113,883 samples, 0.10%)</title><rect x="522.9" y="245" width="1.2" height="15.0" fill="rgb(244,182,43)" rx="2" ry="2" />
+<text  x="525.91" y="255.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (12,721,694 samples, 0.31%)</title><rect x="963.9" y="245" width="3.6" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="966.92" y="255.5" ></text>
+</g>
+<g >
+<title>Vector::dot (2,519,829 samples, 0.06%)</title><rect x="789.5" y="229" width="0.7" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="792.51" y="239.5" ></text>
+</g>
+<g >
+<title>Vector::operator- (6,713,792 samples, 0.16%)</title><rect x="601.3" y="213" width="1.9" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="604.29" y="223.5" ></text>
+</g>
+<g >
+<title>__ieee754_atan2_fma (643,975 samples, 0.02%)</title><rect x="616.9" y="197" width="0.2" height="15.0" fill="rgb(213,40,9)" rx="2" ry="2" />
+<text  x="619.91" y="207.5" ></text>
+</g>
+<g >
+<title>Box::getIntersection (97,449,792 samples, 2.34%)</title><rect x="539.9" y="245" width="27.6" height="15.0" fill="rgb(217,59,14)" rx="2" ry="2" />
+<text  x="542.89" y="255.5" >B..</text>
+</g>
+<g >
+<title>Vector::dot (92,013,464 samples, 2.21%)</title><rect x="967.5" y="245" width="26.1" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="970.53" y="255.5" >V..</text>
+</g>
+<g >
+<title>asm_sysvec_apic_timer_interrupt (1,005,692 samples, 0.02%)</title><rect x="1055.7" y="229" width="0.3" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="1058.70" y="239.5" ></text>
+</g>
+<g >
+<title>Ray::Ray (28,255,386 samples, 0.68%)</title><rect x="778.5" y="245" width="8.0" height="15.0" fill="rgb(238,153,36)" rx="2" ry="2" />
+<text  x="781.49" y="255.5" ></text>
+</g>
+<g >
+<title>do_syscall_64 (632,070 samples, 0.02%)</title><rect x="1189.3" y="309" width="0.1" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="1192.27" y="319.5" ></text>
+</g>
+<g >
+<title>[unknown] (609,566 samples, 0.01%)</title><rect x="10.2" y="309" width="0.2" height="15.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="13.18" y="319.5" ></text>
+</g>
+<g >
+<title>Vector::dot (9,124,601 samples, 0.22%)</title><rect x="775.9" y="229" width="2.6" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="778.90" y="239.5" ></text>
+</g>
+<g >
+<title>sysvec_apic_timer_interrupt (687,307 samples, 0.02%)</title><rect x="603.2" y="197" width="0.2" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="606.20" y="207.5" ></text>
+</g>
+<g >
+<title>Vector::operator- (36,919,527 samples, 0.89%)</title><rect x="209.2" y="261" width="10.5" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="212.21" y="271.5" ></text>
+</g>
+<g >
+<title>Vector::mag2 (967,953 samples, 0.02%)</title><rect x="1109.3" y="261" width="0.3" height="15.0" fill="rgb(244,182,43)" rx="2" ry="2" />
+<text  x="1112.34" y="271.5" ></text>
+</g>
+<g >
+<title>asm_sysvec_apic_timer_interrupt (930,754 samples, 0.02%)</title><rect x="1178.6" y="261" width="0.2" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="1181.55" y="271.5" ></text>
+</g>
+<g >
+<title>std::abs (1,624,715 samples, 0.04%)</title><rect x="820.7" y="245" width="0.5" height="15.0" fill="rgb(223,84,20)" rx="2" ry="2" />
+<text  x="823.73" y="255.5" ></text>
+</g>
+<g >
+<title>update_load_avg (611,480 samples, 0.01%)</title><rect x="1090.4" y="85" width="0.2" height="15.0" fill="rgb(240,165,39)" rx="2" ry="2" />
+<text  x="1093.38" y="95.5" ></text>
+</g>
+<g >
+<title>Disk::getLightIntersection (1,902,877 samples, 0.05%)</title><rect x="611.6" y="229" width="0.5" height="15.0" fill="rgb(229,110,26)" rx="2" ry="2" />
+<text  x="614.59" y="239.5" ></text>
+</g>
+<g >
+<title>Vector::operator+ (73,789,188 samples, 1.77%)</title><rect x="1126.6" y="261" width="20.9" height="15.0" fill="rgb(227,102,24)" rx="2" ry="2" />
+<text  x="1129.59" y="271.5" ></text>
+</g>
+<g >
+<title>tick_nohz_highres_handler (633,883 samples, 0.02%)</title><rect x="739.8" y="149" width="0.2" height="15.0" fill="rgb(215,50,11)" rx="2" ry="2" />
+<text  x="742.82" y="159.5" ></text>
+</g>
+<g >
+<title>tick_sched_handle (929,252 samples, 0.02%)</title><rect x="291.8" y="149" width="0.3" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="294.84" y="159.5" ></text>
+</g>
+<g >
+<title>cfree@GLIBC_2.2.5 (10,721,821 samples, 0.26%)</title><rect x="840.5" y="277" width="3.0" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="843.49" y="287.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (8,343,396 samples, 0.20%)</title><rect x="445.4" y="245" width="2.4" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="448.45" y="255.5" ></text>
+</g>
+<g >
+<title>Plane::reversible (612,668 samples, 0.01%)</title><rect x="333.2" y="277" width="0.2" height="15.0" fill="rgb(215,49,11)" rx="2" ry="2" />
+<text  x="336.20" y="287.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (3,479,685 samples, 0.08%)</title><rect x="620.1" y="213" width="1.0" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="623.13" y="223.5" ></text>
+</g>
+<g >
+<title>Vector::operator* (18,122,882 samples, 0.44%)</title><rect x="449.2" y="245" width="5.1" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="452.17" y="255.5" ></text>
+</g>
+<g >
+<title>Vector::operator* (10,125,983 samples, 0.24%)</title><rect x="526.6" y="261" width="2.9" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="529.61" y="271.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (30,939,513 samples, 0.74%)</title><rect x="200.3" y="245" width="8.8" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="203.34" y="255.5" ></text>
+</g>
+<g >
+<title>Vector::mag (999,329 samples, 0.02%)</title><rect x="351.3" y="277" width="0.2" height="15.0" fill="rgb(217,58,14)" rx="2" ry="2" />
+<text  x="354.26" y="287.5" ></text>
+</g>
+<g >
+<title>Vector::operator* (9,949,353 samples, 0.24%)</title><rect x="618.3" y="229" width="2.8" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="621.29" y="239.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (5,183,076 samples, 0.12%)</title><rect x="464.6" y="229" width="1.5" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="467.65" y="239.5" ></text>
+</g>
+<g >
+<title>Vector::mag (981,946 samples, 0.02%)</title><rect x="525.3" y="261" width="0.3" height="15.0" fill="rgb(217,58,14)" rx="2" ry="2" />
+<text  x="528.31" y="271.5" ></text>
+</g>
+<g >
+<title>Sphere::getIntersection (5,278,097 samples, 0.13%)</title><rect x="19.4" y="293" width="1.5" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="22.41" y="303.5" ></text>
+</g>
+<g >
+<title>Ray::Ray (7,449,983 samples, 0.18%)</title><rect x="614.1" y="229" width="2.1" height="15.0" fill="rgb(238,153,36)" rx="2" ry="2" />
+<text  x="617.06" y="239.5" ></text>
+</g>
+<g >
+<title>Vector::dot (4,999,209 samples, 0.12%)</title><rect x="1094.0" y="245" width="1.4" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="1097.00" y="255.5" ></text>
+</g>
+<g >
+<title>__sysvec_apic_timer_interrupt (637,034 samples, 0.02%)</title><rect x="1150.7" y="229" width="0.2" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="1153.73" y="239.5" ></text>
+</g>
+<g >
+<title>scheduler_tick (930,754 samples, 0.02%)</title><rect x="1178.6" y="133" width="0.2" height="15.0" fill="rgb(246,190,45)" rx="2" ry="2" />
+<text  x="1181.55" y="143.5" ></text>
+</g>
+<g >
+<title>Vector::dot (7,283,468 samples, 0.18%)</title><rect x="330.4" y="261" width="2.1" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="333.42" y="271.5" ></text>
+</g>
+<g >
+<title>__hrtimer_run_queues (662,005 samples, 0.02%)</title><rect x="1055.8" y="165" width="0.2" height="15.0" fill="rgb(237,150,35)" rx="2" ry="2" />
+<text  x="1058.80" y="175.5" ></text>
+</g>
+<g >
+<title>std::numeric_limits&lt;double&gt;::infinity (6,089,042 samples, 0.15%)</title><rect x="497.1" y="245" width="1.7" height="15.0" fill="rgb(249,202,48)" rx="2" ry="2" />
+<text  x="500.08" y="255.5" ></text>
+</g>
+<g >
+<title>Vector::operator- (4,103,558 samples, 0.10%)</title><rect x="818.1" y="245" width="1.1" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="821.07" y="255.5" ></text>
+</g>
+<g >
+<title>__atan2 (643,975 samples, 0.02%)</title><rect x="616.9" y="213" width="0.2" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="619.91" y="223.5" ></text>
+</g>
+<g >
+<title>update_cfs_group (633,544 samples, 0.02%)</title><rect x="1019.5" y="85" width="0.2" height="15.0" fill="rgb(242,174,41)" rx="2" ry="2" />
+<text  x="1022.47" y="95.5" ></text>
+</g>
+<g >
+<title>__sqrt (650,166 samples, 0.02%)</title><rect x="526.1" y="245" width="0.2" height="15.0" fill="rgb(227,103,24)" rx="2" ry="2" />
+<text  x="529.15" y="255.5" ></text>
+</g>
+<g >
+<title>scheduler_tick (637,026 samples, 0.02%)</title><rect x="611.4" y="69" width="0.2" height="15.0" fill="rgb(246,190,45)" rx="2" ry="2" />
+<text  x="614.41" y="79.5" ></text>
+</g>
+<g >
+<title>mmput (632,070 samples, 0.02%)</title><rect x="1189.3" y="213" width="0.1" height="15.0" fill="rgb(226,99,23)" rx="2" ry="2" />
+<text  x="1192.27" y="223.5" ></text>
+</g>
+<g >
+<title>Vector::operator* (8,037,084 samples, 0.19%)</title><rect x="554.7" y="229" width="2.3" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="557.74" y="239.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (1,300,631 samples, 0.03%)</title><rect x="837.6" y="245" width="0.4" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="840.61" y="255.5" ></text>
+</g>
+<g >
+<title>tick_sched_handle (662,005 samples, 0.02%)</title><rect x="1055.8" y="133" width="0.2" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="1058.80" y="143.5" ></text>
+</g>
+<g >
+<title>Sphere::getLightIntersection (28,375,352 samples, 0.68%)</title><rect x="1090.6" y="261" width="8.1" height="15.0" fill="rgb(207,13,3)" rx="2" ry="2" />
+<text  x="1093.65" y="271.5" ></text>
+</g>
+<g >
+<title>tick_nohz_highres_handler (597,688 samples, 0.01%)</title><rect x="819.9" y="165" width="0.2" height="15.0" fill="rgb(215,50,11)" rx="2" ry="2" />
+<text  x="822.93" y="175.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (9,394,358 samples, 0.23%)</title><rect x="458.9" y="229" width="2.7" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="461.95" y="239.5" ></text>
+</g>
+<g >
+<title>getLight (647,850,998 samples, 15.58%)</title><rect x="637.3" y="261" width="183.9" height="15.0" fill="rgb(240,163,39)" rx="2" ry="2" />
+<text  x="640.34" y="271.5" >getLight</text>
+</g>
+<g >
+<title>scheduler_tick (637,874 samples, 0.02%)</title><rect x="496.8" y="101" width="0.2" height="15.0" fill="rgb(246,190,45)" rx="2" ry="2" />
+<text  x="499.80" y="111.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (1,644,378 samples, 0.04%)</title><rect x="617.1" y="229" width="0.5" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="620.10" y="239.5" ></text>
+</g>
+<g >
+<title>Box::getLightIntersection (3,458,169 samples, 0.08%)</title><rect x="295.4" y="277" width="0.9" height="15.0" fill="rgb(212,32,7)" rx="2" ry="2" />
+<text  x="298.36" y="287.5" ></text>
+</g>
+<g >
+<title>insertionSort (50,910,613 samples, 1.22%)</title><rect x="821.2" y="261" width="14.4" height="15.0" fill="rgb(248,200,48)" rx="2" ry="2" />
+<text  x="824.20" y="271.5" ></text>
+</g>
+<g >
+<title>tick_sched_handle (1,273,651 samples, 0.03%)</title><rect x="444.9" y="133" width="0.4" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="447.91" y="143.5" ></text>
+</g>
+<g >
+<title>__close_nocancel (634,447 samples, 0.02%)</title><rect x="1189.7" y="293" width="0.2" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="1192.72" y="303.5" ></text>
+</g>
+<g >
+<title>Vector::operator* (36,311,494 samples, 0.87%)</title><rect x="993.6" y="245" width="10.4" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="996.65" y="255.5" ></text>
+</g>
+<g >
+<title>update_process_times (634,802 samples, 0.02%)</title><rect x="348.9" y="149" width="0.1" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="351.85" y="159.5" ></text>
+</g>
+<g >
+<title>__sysvec_apic_timer_interrupt (2,203,975 samples, 0.05%)</title><rect x="444.7" y="197" width="0.7" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="447.74" y="207.5" ></text>
+</g>
+<g >
+<title>scheduler_tick (634,802 samples, 0.02%)</title><rect x="348.9" y="133" width="0.1" height="15.0" fill="rgb(246,190,45)" rx="2" ry="2" />
+<text  x="351.85" y="143.5" ></text>
+</g>
+<g >
+<title>__filemap_fdatawrite_range (634,447 samples, 0.02%)</title><rect x="1189.7" y="133" width="0.2" height="15.0" fill="rgb(233,129,30)" rx="2" ry="2" />
+<text  x="1192.72" y="143.5" ></text>
+</g>
+<g >
+<title>ext4_file_write_iter (957,886 samples, 0.02%)</title><rect x="1189.4" y="165" width="0.3" height="15.0" fill="rgb(220,71,17)" rx="2" ry="2" />
+<text  x="1192.45" y="175.5" ></text>
+</g>
+<g >
+<title>Box::getLightIntersection (589,929,785 samples, 14.19%)</title><rect x="888.6" y="261" width="167.4" height="15.0" fill="rgb(212,32,7)" rx="2" ry="2" />
+<text  x="891.58" y="271.5" >Box::getLightIntersec..</text>
+</g>
+<g >
+<title>update_process_times (930,754 samples, 0.02%)</title><rect x="1178.6" y="149" width="0.2" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="1181.55" y="159.5" ></text>
+</g>
+<g >
+<title>tick_sched_handle (687,307 samples, 0.02%)</title><rect x="603.2" y="117" width="0.2" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="606.20" y="127.5" ></text>
+</g>
+<g >
+<title>Vector::mag2 (6,855,119 samples, 0.16%)</title><rect x="1095.4" y="245" width="2.0" height="15.0" fill="rgb(244,182,43)" rx="2" ry="2" />
+<text  x="1098.42" y="255.5" ></text>
+</g>
+<g >
+<title>tick_nohz_highres_handler (930,754 samples, 0.02%)</title><rect x="1178.6" y="181" width="0.2" height="15.0" fill="rgb(215,50,11)" rx="2" ry="2" />
+<text  x="1181.55" y="191.5" ></text>
+</g>
+<g >
+<title>__sysvec_apic_timer_interrupt (687,508 samples, 0.02%)</title><rect x="208.9" y="197" width="0.2" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="211.93" y="207.5" ></text>
+</g>
+<g >
+<title>scheduler_tick (1,614,530 samples, 0.04%)</title><rect x="1019.4" y="117" width="0.4" height="15.0" fill="rgb(246,190,45)" rx="2" ry="2" />
+<text  x="1022.38" y="127.5" ></text>
+</g>
+<g >
+<title>Vector::dot (633,081 samples, 0.02%)</title><rect x="611.9" y="213" width="0.1" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="614.86" y="223.5" ></text>
+</g>
+<g >
+<title>sysvec_apic_timer_interrupt (662,005 samples, 0.02%)</title><rect x="1055.8" y="213" width="0.2" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="1058.80" y="223.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (26,019,218 samples, 0.63%)</title><rect x="1140.0" y="245" width="7.4" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="1142.97" y="255.5" ></text>
+</g>
+<g >
+<title>__sysvec_apic_timer_interrupt (662,005 samples, 0.02%)</title><rect x="1055.8" y="197" width="0.2" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="1058.80" y="207.5" ></text>
+</g>
+<g >
+<title>Vector::normalize (8,184,207 samples, 0.20%)</title><rect x="351.6" y="277" width="2.4" height="15.0" fill="rgb(252,218,52)" rx="2" ry="2" />
+<text  x="354.63" y="287.5" ></text>
+</g>
+<g >
+<title>tick_sched_handle (634,770 samples, 0.02%)</title><rect x="1147.4" y="149" width="0.1" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="1150.35" y="159.5" ></text>
+</g>
+<g >
+<title>refresh (4,150,836,929 samples, 99.83%)</title><rect x="10.5" y="309" width="1178.0" height="15.0" fill="rgb(212,32,7)" rx="2" ry="2" />
+<text  x="13.53" y="319.5" >refresh</text>
+</g>
+<g >
+<title>sysvec_apic_timer_interrupt (969,023 samples, 0.02%)</title><rect x="369.4" y="261" width="0.3" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="372.43" y="271.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (2,475,118 samples, 0.06%)</title><rect x="1097.9" y="229" width="0.7" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="1100.91" y="239.5" ></text>
+</g>
+<g >
+<title>Vector::dot (25,086,439 samples, 0.60%)</title><rect x="437.6" y="229" width="7.1" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="440.62" y="239.5" ></text>
+</g>
+<g >
+<title>Plane::getIntersection (7,681,385 samples, 0.18%)</title><rect x="500.6" y="245" width="2.2" height="15.0" fill="rgb(232,126,30)" rx="2" ry="2" />
+<text  x="503.59" y="255.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (931,919 samples, 0.02%)</title><rect x="349.8" y="277" width="0.3" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="352.84" y="287.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (1,192,205 samples, 0.03%)</title><rect x="348.4" y="245" width="0.4" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="351.42" y="255.5" ></text>
+</g>
+<g >
+<title>update_wall_time (611,594 samples, 0.01%)</title><rect x="444.7" y="101" width="0.2" height="15.0" fill="rgb(207,11,2)" rx="2" ry="2" />
+<text  x="447.74" y="111.5" ></text>
+</g>
+<g >
+<title>scheduler_tick (929,252 samples, 0.02%)</title><rect x="291.8" y="117" width="0.3" height="15.0" fill="rgb(246,190,45)" rx="2" ry="2" />
+<text  x="294.84" y="127.5" ></text>
+</g>
+<g >
+<title>Vector::mag2 (982,014 samples, 0.02%)</title><rect x="616.5" y="213" width="0.3" height="15.0" fill="rgb(244,182,43)" rx="2" ry="2" />
+<text  x="619.54" y="223.5" ></text>
+</g>
+<g >
+<title>Vector::dot (2,863,745 samples, 0.07%)</title><rect x="502.0" y="229" width="0.8" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="504.96" y="239.5" ></text>
+</g>
+<g >
+<title>update_process_times (637,026 samples, 0.02%)</title><rect x="611.4" y="85" width="0.2" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="614.41" y="95.5" ></text>
+</g>
+<g >
+<title>__sysvec_apic_timer_interrupt (2,143,793 samples, 0.05%)</title><rect x="167.9" y="213" width="0.6" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="170.89" y="223.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (8,784,566 samples, 0.21%)</title><rect x="737.3" y="213" width="2.5" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="740.33" y="223.5" ></text>
+</g>
+<g >
+<title>task_tick_fair (930,754 samples, 0.02%)</title><rect x="1178.6" y="117" width="0.2" height="15.0" fill="rgb(217,57,13)" rx="2" ry="2" />
+<text  x="1181.55" y="127.5" ></text>
+</g>
+<g >
+<title>scheduler_tick (1,238,615 samples, 0.03%)</title><rect x="168.0" y="117" width="0.3" height="15.0" fill="rgb(246,190,45)" rx="2" ry="2" />
+<text  x="170.98" y="127.5" ></text>
+</g>
+<g >
+<title>fmod@@GLIBC_2.38 (1,275,705 samples, 0.03%)</title><rect x="636.8" y="245" width="0.4" height="15.0" fill="rgb(205,1,0)" rx="2" ry="2" />
+<text  x="639.80" y="255.5" ></text>
+</g>
+<g >
+<title>std::numeric_limits&lt;double&gt;::infinity (1,596,031 samples, 0.04%)</title><rect x="629.1" y="245" width="0.4" height="15.0" fill="rgb(249,202,48)" rx="2" ry="2" />
+<text  x="632.08" y="255.5" ></text>
+</g>
+<g >
+<title>Vector::dot (14,342,337 samples, 0.34%)</title><rect x="594.0" y="213" width="4.1" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="597.03" y="223.5" ></text>
+</g>
+<g >
+<title>Vector::operator+ (2,257,916 samples, 0.05%)</title><rect x="304.1" y="261" width="0.6" height="15.0" fill="rgb(227,102,24)" rx="2" ry="2" />
+<text  x="307.05" y="271.5" ></text>
+</g>
+<g >
+<title>__sysvec_apic_timer_interrupt (637,336 samples, 0.02%)</title><rect x="369.4" y="245" width="0.2" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="372.43" y="255.5" ></text>
+</g>
+<g >
+<title>sysvec_apic_timer_interrupt (981,455 samples, 0.02%)</title><rect x="496.8" y="213" width="0.3" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="499.80" y="223.5" ></text>
+</g>
+<g >
+<title>Vector::dot (9,881,469 samples, 0.24%)</title><rect x="176.2" y="261" width="2.8" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="179.20" y="271.5" ></text>
+</g>
+<g >
+<title>solveScalers (108,750,259 samples, 2.62%)</title><rect x="466.2" y="245" width="30.9" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="469.22" y="255.5" >so..</text>
+</g>
+<g >
+<title>Plane::getNormal (2,226,573 samples, 0.05%)</title><rect x="332.6" y="277" width="0.6" height="15.0" fill="rgb(207,10,2)" rx="2" ry="2" />
+<text  x="335.57" y="287.5" ></text>
+</g>
+<g >
+<title>asm_sysvec_apic_timer_interrupt (1,566,502 samples, 0.04%)</title><rect x="291.8" y="245" width="0.4" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="294.76" y="255.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (4,161,081 samples, 0.10%)</title><rect x="555.8" y="213" width="1.2" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="558.84" y="223.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (7,928,949 samples, 0.19%)</title><rect x="1017.0" y="229" width="2.3" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="1020.04" y="239.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (3,264,696 samples, 0.08%)</title><rect x="599.3" y="197" width="0.9" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="602.28" y="207.5" ></text>
+</g>
+<g >
+<title>hrtimer_interrupt (951,287 samples, 0.02%)</title><rect x="219.7" y="213" width="0.3" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="222.69" y="223.5" ></text>
+</g>
+<g >
+<title>asm_sysvec_apic_timer_interrupt (634,770 samples, 0.02%)</title><rect x="1147.4" y="245" width="0.1" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="1150.35" y="255.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (636,735 samples, 0.02%)</title><rect x="559.3" y="213" width="0.2" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="562.33" y="223.5" ></text>
+</g>
+<g >
+<title>Sphere::getIntersection (2,238,412 samples, 0.05%)</title><rect x="572.3" y="245" width="0.6" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="575.25" y="255.5" ></text>
+</g>
+<g >
+<title>__ieee754_atan2_fma (1,946,572 samples, 0.05%)</title><rect x="792.0" y="213" width="0.5" height="15.0" fill="rgb(213,40,9)" rx="2" ry="2" />
+<text  x="794.98" y="223.5" ></text>
+</g>
+<g >
+<title>__hrtimer_run_queues (1,223,166 samples, 0.03%)</title><rect x="291.8" y="181" width="0.3" height="15.0" fill="rgb(237,150,35)" rx="2" ry="2" />
+<text  x="294.76" y="191.5" ></text>
+</g>
+<g >
+<title>cfree@GLIBC_2.2.5 (3,258,537 samples, 0.08%)</title><rect x="575.0" y="245" width="0.9" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="577.97" y="255.5" ></text>
+</g>
+<g >
+<title>sysvec_apic_timer_interrupt (634,770 samples, 0.02%)</title><rect x="1147.4" y="229" width="0.1" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="1150.35" y="239.5" ></text>
+</g>
+<g >
+<title>insertionSort (12,851,862 samples, 0.31%)</title><rect x="625.1" y="245" width="3.6" height="15.0" fill="rgb(248,200,48)" rx="2" ry="2" />
+<text  x="628.05" y="255.5" ></text>
+</g>
+<g >
+<title>__sysvec_apic_timer_interrupt (1,614,530 samples, 0.04%)</title><rect x="1019.4" y="213" width="0.4" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="1022.38" y="223.5" ></text>
+</g>
+<g >
+<title>__hrtimer_run_queues (663,026 samples, 0.02%)</title><rect x="359.7" y="197" width="0.2" height="15.0" fill="rgb(237,150,35)" rx="2" ry="2" />
+<text  x="362.70" y="207.5" ></text>
+</g>
+<g >
+<title>exc_page_fault (662,419 samples, 0.02%)</title><rect x="308.0" y="245" width="0.2" height="15.0" fill="rgb(212,35,8)" rx="2" ry="2" />
+<text  x="310.97" y="255.5" ></text>
+</g>
+<g >
+<title>Vector::operator+ (11,390,960 samples, 0.27%)</title><rect x="529.5" y="261" width="3.2" height="15.0" fill="rgb(227,102,24)" rx="2" ry="2" />
+<text  x="532.48" y="271.5" ></text>
+</g>
+<g >
+<title>hrtimer_interrupt (930,754 samples, 0.02%)</title><rect x="1178.6" y="213" width="0.2" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="1181.55" y="223.5" ></text>
+</g>
+<g >
+<title>__fput (634,447 samples, 0.02%)</title><rect x="1189.7" y="197" width="0.2" height="15.0" fill="rgb(248,200,47)" rx="2" ry="2" />
+<text  x="1192.72" y="207.5" ></text>
+</g>
+<g >
+<title>Disk::getIntersection (13,983,141 samples, 0.34%)</title><rect x="499.6" y="261" width="4.0" height="15.0" fill="rgb(234,137,32)" rx="2" ry="2" />
+<text  x="502.60" y="271.5" ></text>
+</g>
+<g >
+<title>task_tick_fair (976,856 samples, 0.02%)</title><rect x="1019.4" y="101" width="0.3" height="15.0" fill="rgb(217,57,13)" rx="2" ry="2" />
+<text  x="1022.38" y="111.5" ></text>
+</g>
+<g >
+<title>sysvec_apic_timer_interrupt (637,026 samples, 0.02%)</title><rect x="611.4" y="181" width="0.2" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="614.41" y="191.5" ></text>
+</g>
+<g >
+<title>hrtimer_interrupt (1,250,403 samples, 0.03%)</title><rect x="1090.3" y="197" width="0.3" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="1093.29" y="207.5" ></text>
+</g>
+<g >
+<title>Ray::Ray (637,728 samples, 0.02%)</title><rect x="572.1" y="245" width="0.2" height="15.0" fill="rgb(238,153,36)" rx="2" ry="2" />
+<text  x="575.07" y="255.5" ></text>
+</g>
+<g >
+<title>update_process_times (1,558,272 samples, 0.04%)</title><rect x="167.9" y="133" width="0.4" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="170.89" y="143.5" ></text>
+</g>
+<g >
+<title>sysvec_apic_timer_interrupt (597,688 samples, 0.01%)</title><rect x="819.9" y="229" width="0.2" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="822.93" y="239.5" ></text>
+</g>
+<g >
+<title>Vector::dot (687,561 samples, 0.02%)</title><rect x="554.5" y="229" width="0.2" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="557.55" y="239.5" ></text>
+</g>
+<g >
+<title>__sysvec_apic_timer_interrupt (687,141 samples, 0.02%)</title><rect x="553.8" y="181" width="0.2" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="556.80" y="191.5" ></text>
+</g>
+<g >
+<title>Plane::getLightIntersection (6,801,929 samples, 0.16%)</title><rect x="612.1" y="229" width="2.0" height="15.0" fill="rgb(226,99,23)" rx="2" ry="2" />
+<text  x="615.13" y="239.5" ></text>
+</g>
+<g >
+<title>Vector::dot (1,874,794 samples, 0.05%)</title><rect x="768.3" y="229" width="0.5" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="771.32" y="239.5" ></text>
+</g>
+<g >
+<title>hrtimer_interrupt (2,203,975 samples, 0.05%)</title><rect x="444.7" y="181" width="0.7" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="447.74" y="191.5" ></text>
+</g>
+<g >
+<title>cfree@GLIBC_2.2.5 (1,217,597 samples, 0.03%)</title><rect x="1187.5" y="293" width="0.4" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="1190.51" y="303.5" ></text>
+</g>
+<g >
+<title>Ray::Ray (11,547,136 samples, 0.28%)</title><rect x="333.4" y="277" width="3.3" height="15.0" fill="rgb(238,153,36)" rx="2" ry="2" />
+<text  x="336.37" y="287.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (1,913,540 samples, 0.05%)</title><rect x="359.2" y="261" width="0.5" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="362.15" y="271.5" ></text>
+</g>
+<g >
+<title>sysvec_apic_timer_interrupt (1,566,502 samples, 0.04%)</title><rect x="291.8" y="229" width="0.4" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="294.76" y="239.5" ></text>
+</g>
+<g >
+<title>fix (2,902,642 samples, 0.07%)</title><rect x="575.9" y="245" width="0.8" height="15.0" fill="rgb(251,212,50)" rx="2" ry="2" />
+<text  x="578.90" y="255.5" ></text>
+</g>
+<g >
+<title>sysvec_apic_timer_interrupt (612,580 samples, 0.01%)</title><rect x="534.4" y="245" width="0.2" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="537.43" y="255.5" ></text>
+</g>
+<g >
+<title>Vector::dot (59,436,710 samples, 1.43%)</title><rect x="703.5" y="229" width="16.9" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="706.49" y="239.5" ></text>
+</g>
+<g >
+<title>hrtimer_interrupt (633,883 samples, 0.02%)</title><rect x="739.8" y="181" width="0.2" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="742.82" y="191.5" ></text>
+</g>
+<g >
+<title>__hrtimer_run_queues (951,287 samples, 0.02%)</title><rect x="219.7" y="197" width="0.3" height="15.0" fill="rgb(237,150,35)" rx="2" ry="2" />
+<text  x="222.69" y="207.5" ></text>
+</g>
+<g >
+<title>ext4_buffered_write_iter (957,886 samples, 0.02%)</title><rect x="1189.4" y="149" width="0.3" height="15.0" fill="rgb(213,40,9)" rx="2" ry="2" />
+<text  x="1192.45" y="159.5" ></text>
+</g>
+<g >
+<title>Vector::operator- (15,547,482 samples, 0.37%)</title><rect x="461.7" y="245" width="4.4" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="464.71" y="255.5" ></text>
+</g>
+<g >
+<title>Vector::dot (12,615,925 samples, 0.30%)</title><rect x="1104.4" y="261" width="3.6" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="1107.44" y="271.5" ></text>
+</g>
+<g >
+<title>__hrtimer_run_queues (637,034 samples, 0.02%)</title><rect x="1150.7" y="197" width="0.2" height="15.0" fill="rgb(237,150,35)" rx="2" ry="2" />
+<text  x="1153.73" y="207.5" ></text>
+</g>
+<g >
+<title>sysvec_apic_timer_interrupt (687,141 samples, 0.02%)</title><rect x="553.8" y="197" width="0.2" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="556.80" y="207.5" ></text>
+</g>
+<g >
+<title>Vector::mag (640,378 samples, 0.02%)</title><rect x="618.1" y="229" width="0.2" height="15.0" fill="rgb(217,58,14)" rx="2" ry="2" />
+<text  x="621.11" y="239.5" ></text>
+</g>
+<g >
+<title>Disk::getIntersection (2,627,187 samples, 0.06%)</title><rect x="567.7" y="245" width="0.8" height="15.0" fill="rgb(234,137,32)" rx="2" ry="2" />
+<text  x="570.72" y="255.5" ></text>
+</g>
+<g >
+<title>operator* (637,617 samples, 0.02%)</title><rect x="1188.2" y="293" width="0.2" height="15.0" fill="rgb(233,130,31)" rx="2" ry="2" />
+<text  x="1191.21" y="303.5" ></text>
+</g>
+<g >
+<title>hrtimer_interrupt (687,141 samples, 0.02%)</title><rect x="553.8" y="165" width="0.2" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="556.80" y="175.5" ></text>
+</g>
+<g >
+<title>Vector::operator+ (24,517,711 samples, 0.59%)</title><rect x="359.9" y="277" width="6.9" height="15.0" fill="rgb(227,102,24)" rx="2" ry="2" />
+<text  x="362.88" y="287.5" ></text>
+</g>
+<g >
+<title>std::numeric_limits&lt;double&gt;::infinity (646,198 samples, 0.02%)</title><rect x="571.7" y="229" width="0.2" height="15.0" fill="rgb(249,202,48)" rx="2" ry="2" />
+<text  x="574.70" y="239.5" ></text>
+</g>
+<g >
+<title>generic_perform_write (957,886 samples, 0.02%)</title><rect x="1189.4" y="133" width="0.3" height="15.0" fill="rgb(236,146,35)" rx="2" ry="2" />
+<text  x="1192.45" y="143.5" ></text>
+</g>
+<g >
+<title>insertionSort (637,946 samples, 0.02%)</title><rect x="1187.9" y="293" width="0.2" height="15.0" fill="rgb(248,200,48)" rx="2" ry="2" />
+<text  x="1190.94" y="303.5" ></text>
+</g>
+<g >
+<title>malloc (5,957,843 samples, 0.14%)</title><rect x="1178.8" y="277" width="1.7" height="15.0" fill="rgb(230,119,28)" rx="2" ry="2" />
+<text  x="1181.82" y="287.5" ></text>
+</g>
+<g >
+<title>Vector::dot (6,915,322 samples, 0.17%)</title><rect x="1059.1" y="245" width="1.9" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="1062.08" y="255.5" ></text>
+</g>
+<g >
+<title>_int_free (6,665,575 samples, 0.16%)</title><rect x="841.6" y="261" width="1.9" height="15.0" fill="rgb(247,196,46)" rx="2" ry="2" />
+<text  x="844.64" y="271.5" ></text>
+</g>
+<g >
+<title>Vector::operator* (619,950 samples, 0.01%)</title><rect x="22.4" y="293" width="0.1" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="25.37" y="303.5" ></text>
+</g>
+<g >
+<title>sysvec_apic_timer_interrupt (635,099 samples, 0.02%)</title><rect x="1003.8" y="213" width="0.2" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="1006.77" y="223.5" ></text>
+</g>
+<g >
+<title>with_errno (656,712 samples, 0.02%)</title><rect x="840.3" y="261" width="0.2" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="843.30" y="271.5" ></text>
+</g>
+<g >
+<title>Plane::getIntersection (1,541,923 samples, 0.04%)</title><rect x="18.2" y="293" width="0.5" height="15.0" fill="rgb(232,126,30)" rx="2" ry="2" />
+<text  x="21.24" y="303.5" ></text>
+</g>
+<g >
+<title>tick_nohz_highres_handler (637,026 samples, 0.02%)</title><rect x="611.4" y="117" width="0.2" height="15.0" fill="rgb(215,50,11)" rx="2" ry="2" />
+<text  x="614.41" y="127.5" ></text>
+</g>
+<g >
+<title>do_user_addr_fault (559,308 samples, 0.01%)</title><rect x="1189.0" y="213" width="0.1" height="15.0" fill="rgb(228,108,25)" rx="2" ry="2" />
+<text  x="1191.96" y="223.5" ></text>
+</g>
+<g >
+<title>Vector::mag2 (658,147 samples, 0.02%)</title><rect x="525.6" y="261" width="0.2" height="15.0" fill="rgb(244,182,43)" rx="2" ry="2" />
+<text  x="528.59" y="271.5" ></text>
+</g>
+<g >
+<title>hrtimer_interrupt (637,026 samples, 0.02%)</title><rect x="611.4" y="149" width="0.2" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="614.41" y="159.5" ></text>
+</g>
+<g >
+<title>update_process_times (930,271 samples, 0.02%)</title><rect x="1090.3" y="133" width="0.3" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="1093.29" y="143.5" ></text>
+</g>
+<g >
+<title>asm_sysvec_apic_timer_interrupt (663,026 samples, 0.02%)</title><rect x="359.7" y="261" width="0.2" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="362.70" y="271.5" ></text>
+</g>
+<g >
+<title>update_process_times (929,252 samples, 0.02%)</title><rect x="291.8" y="133" width="0.3" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="294.84" y="143.5" ></text>
+</g>
+<g >
+<title>Vector::dot (55,330,576 samples, 1.33%)</title><rect x="152.2" y="245" width="15.7" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="155.19" y="255.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (3,867,070 samples, 0.09%)</title><rect x="24.0" y="277" width="1.1" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="26.95" y="287.5" ></text>
+</g>
+<g >
+<title>tick_sched_handle (634,802 samples, 0.02%)</title><rect x="348.9" y="165" width="0.1" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="351.85" y="175.5" ></text>
+</g>
+<g >
+<title>sysvec_apic_timer_interrupt (2,203,975 samples, 0.05%)</title><rect x="444.7" y="213" width="0.7" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="447.74" y="223.5" ></text>
+</g>
+<g >
+<title>__hrtimer_run_queues (637,874 samples, 0.02%)</title><rect x="496.8" y="165" width="0.2" height="15.0" fill="rgb(237,150,35)" rx="2" ry="2" />
+<text  x="499.80" y="175.5" ></text>
+</g>
+<g >
+<title>_dl_relocate_object (1,408,441 samples, 0.03%)</title><rect x="1188.7" y="261" width="0.4" height="15.0" fill="rgb(231,120,28)" rx="2" ry="2" />
+<text  x="1191.71" y="271.5" ></text>
+</g>
+<g >
+<title>solveScalers (91,460,631 samples, 2.20%)</title><rect x="740.0" y="229" width="26.0" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="743.00" y="239.5" >s..</text>
+</g>
+<g >
+<title>solveScalers (905,786 samples, 0.02%)</title><rect x="1151.0" y="261" width="0.3" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="1154.00" y="271.5" ></text>
+</g>
+<g >
+<title>Vector::operator- (5,734,968 samples, 0.14%)</title><rect x="532.7" y="261" width="1.6" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="535.71" y="271.5" ></text>
+</g>
+<g >
+<title>Plane::getIntersection (42,976,610 samples, 1.03%)</title><rect x="320.4" y="277" width="12.2" height="15.0" fill="rgb(232,126,30)" rx="2" ry="2" />
+<text  x="323.37" y="287.5" ></text>
+</g>
+<g >
+<title>Vector::dot (5,793,317 samples, 0.14%)</title><rect x="552.2" y="213" width="1.6" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="555.16" y="223.5" ></text>
+</g>
+<g >
+<title>Sphere::getLightIntersection (1,611,221 samples, 0.04%)</title><rect x="349.0" y="277" width="0.5" height="15.0" fill="rgb(207,13,3)" rx="2" ry="2" />
+<text  x="352.03" y="287.5" ></text>
+</g>
+<g >
+<title>_IO_file_xsputn@@GLIBC_2.2.5 (957,886 samples, 0.02%)</title><rect x="1189.4" y="293" width="0.3" height="15.0" fill="rgb(242,171,41)" rx="2" ry="2" />
+<text  x="1192.45" y="303.5" ></text>
+</g>
+<g >
+<title>asm_sysvec_apic_timer_interrupt (687,141 samples, 0.02%)</title><rect x="553.8" y="213" width="0.2" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="556.80" y="223.5" ></text>
+</g>
+<g >
+<title>Vector::mag (4,631,193 samples, 0.11%)</title><rect x="1108.0" y="261" width="1.3" height="15.0" fill="rgb(217,58,14)" rx="2" ry="2" />
+<text  x="1111.02" y="271.5" ></text>
+</g>
+<g >
+<title>asm_sysvec_apic_timer_interrupt (597,688 samples, 0.01%)</title><rect x="819.9" y="245" width="0.2" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="822.93" y="255.5" ></text>
+</g>
+<g >
+<title>Vector::mag2 (8,881,010 samples, 0.21%)</title><rect x="344.7" y="261" width="2.5" height="15.0" fill="rgb(244,182,43)" rx="2" ry="2" />
+<text  x="347.73" y="271.5" ></text>
+</g>
+<g >
+<title>asm_sysvec_apic_timer_interrupt (632,180 samples, 0.02%)</title><rect x="1187.2" y="261" width="0.1" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="1190.16" y="271.5" ></text>
+</g>
+<g >
+<title>update_process_times (637,874 samples, 0.02%)</title><rect x="496.8" y="117" width="0.2" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="499.80" y="127.5" ></text>
+</g>
+<g >
+<title>Vector::dot (1,924,409 samples, 0.05%)</title><rect x="617.6" y="229" width="0.5" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="620.56" y="239.5" ></text>
+</g>
+<g >
+<title>solveScalers (127,059,064 samples, 3.06%)</title><rect x="1019.9" y="245" width="36.1" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="1022.93" y="255.5" >sol..</text>
+</g>
+<g >
+<title>tick_sched_handle (930,271 samples, 0.02%)</title><rect x="1090.3" y="149" width="0.3" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="1093.29" y="159.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (20,264,280 samples, 0.49%)</title><rect x="184.0" y="245" width="5.7" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="186.95" y="255.5" ></text>
+</g>
+<g >
+<title>asm_sysvec_apic_timer_interrupt (661,427 samples, 0.02%)</title><rect x="765.8" y="213" width="0.2" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="768.77" y="223.5" ></text>
+</g>
+<g >
+<title>task_tick_fair (894,716 samples, 0.02%)</title><rect x="168.1" y="101" width="0.2" height="15.0" fill="rgb(217,57,13)" rx="2" ry="2" />
+<text  x="171.08" y="111.5" ></text>
+</g>
+<g >
+<title>hrtimer_interrupt (637,034 samples, 0.02%)</title><rect x="1150.7" y="213" width="0.2" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="1153.73" y="223.5" ></text>
+</g>
+<g >
+<title>Disk::getIntersection (37,144,884 samples, 0.89%)</title><rect x="296.8" y="277" width="10.5" height="15.0" fill="rgb(234,137,32)" rx="2" ry="2" />
+<text  x="299.78" y="287.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (956,283 samples, 0.02%)</title><rect x="369.1" y="261" width="0.2" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="372.07" y="271.5" ></text>
+</g>
+<g >
+<title>solveScalers (2,638,147 samples, 0.06%)</title><rect x="569.2" y="229" width="0.7" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="572.20" y="239.5" ></text>
+</g>
+<g >
+<title>ColorTexture::getColor (638,117 samples, 0.02%)</title><rect x="766.0" y="245" width="0.1" height="15.0" fill="rgb(230,118,28)" rx="2" ry="2" />
+<text  x="768.96" y="255.5" ></text>
+</g>
+<g >
+<title>__sysvec_apic_timer_interrupt (597,688 samples, 0.01%)</title><rect x="819.9" y="213" width="0.2" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="822.93" y="223.5" ></text>
+</g>
+<g >
+<title>__hrtimer_run_queues (1,558,272 samples, 0.04%)</title><rect x="167.9" y="181" width="0.4" height="15.0" fill="rgb(237,150,35)" rx="2" ry="2" />
+<text  x="170.89" y="191.5" ></text>
+</g>
+<g >
+<title>__sysvec_apic_timer_interrupt (930,754 samples, 0.02%)</title><rect x="1178.6" y="229" width="0.2" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="1181.55" y="239.5" ></text>
+</g>
+<g >
+<title>Vector::dot (1,250,635 samples, 0.03%)</title><rect x="517.3" y="245" width="0.3" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="520.29" y="255.5" ></text>
+</g>
+<g >
+<title>malloc (4,985,918 samples, 0.12%)</title><rect x="835.6" y="261" width="1.5" height="15.0" fill="rgb(230,119,28)" rx="2" ry="2" />
+<text  x="838.64" y="271.5" ></text>
+</g>
+<g >
+<title>__hrtimer_run_queues (637,026 samples, 0.02%)</title><rect x="611.4" y="133" width="0.2" height="15.0" fill="rgb(237,150,35)" rx="2" ry="2" />
+<text  x="614.41" y="143.5" ></text>
+</g>
+<g >
+<title>ext4_alloc_da_blocks (634,447 samples, 0.02%)</title><rect x="1189.7" y="165" width="0.2" height="15.0" fill="rgb(237,147,35)" rx="2" ry="2" />
+<text  x="1192.72" y="175.5" ></text>
+</g>
+<g >
+<title>hrtimer_interrupt (687,307 samples, 0.02%)</title><rect x="603.2" y="165" width="0.2" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="606.20" y="175.5" ></text>
+</g>
+<g >
+<title>Vector::operator* (2,233,625 samples, 0.05%)</title><rect x="573.0" y="245" width="0.6" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="575.98" y="255.5" ></text>
+</g>
+<g >
+<title>Vector::operator+ (68,428,625 samples, 1.65%)</title><rect x="189.8" y="261" width="19.4" height="15.0" fill="rgb(227,102,24)" rx="2" ry="2" />
+<text  x="192.79" y="271.5" ></text>
+</g>
+<g >
+<title>Vector::operator- (19,496,802 samples, 0.47%)</title><rect x="734.3" y="229" width="5.5" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="737.29" y="239.5" ></text>
+</g>
+<g >
+<title>asm_sysvec_apic_timer_interrupt (687,307 samples, 0.02%)</title><rect x="603.2" y="213" width="0.2" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="606.20" y="223.5" ></text>
+</g>
+<g >
+<title>scheduler_tick (951,287 samples, 0.02%)</title><rect x="219.7" y="133" width="0.3" height="15.0" fill="rgb(246,190,45)" rx="2" ry="2" />
+<text  x="222.69" y="143.5" ></text>
+</g>
+<g >
+<title>__hrtimer_run_queues (661,427 samples, 0.02%)</title><rect x="765.8" y="149" width="0.2" height="15.0" fill="rgb(237,150,35)" rx="2" ry="2" />
+<text  x="768.77" y="159.5" ></text>
+</g>
+<g >
+<title>hrtimer_interrupt (663,026 samples, 0.02%)</title><rect x="359.7" y="213" width="0.2" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="362.70" y="223.5" ></text>
+</g>
+<g >
+<title>solveScalers (28,899,765 samples, 0.70%)</title><rect x="603.4" y="213" width="8.2" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="606.39" y="223.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (9,787,836 samples, 0.24%)</title><rect x="731.5" y="213" width="2.8" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="734.51" y="223.5" ></text>
+</g>
+<g >
+<title>sysvec_apic_timer_interrupt (612,867 samples, 0.01%)</title><rect x="1075.1" y="229" width="0.2" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="1078.09" y="239.5" ></text>
+</g>
+<g >
+<title>__sqrt_finite@GLIBC_2.15 (1,826,250 samples, 0.04%)</title><rect x="1150.2" y="261" width="0.5" height="15.0" fill="rgb(249,204,48)" rx="2" ry="2" />
+<text  x="1153.21" y="271.5" ></text>
+</g>
+<g >
+<title>solveScalers (23,548,733 samples, 0.57%)</title><rect x="313.7" y="261" width="6.7" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="316.69" y="271.5" ></text>
+</g>
+<g >
+<title>std::numeric_limits&lt;double&gt;::infinity (12,397,540 samples, 0.30%)</title><rect x="1183.9" y="277" width="3.5" height="15.0" fill="rgb(249,202,48)" rx="2" ry="2" />
+<text  x="1186.90" y="287.5" ></text>
+</g>
+<g >
+<title>__sysvec_apic_timer_interrupt (661,427 samples, 0.02%)</title><rect x="765.8" y="181" width="0.2" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="768.77" y="191.5" ></text>
+</g>
+<g >
+<title>operator* (3,232,742 samples, 0.08%)</title><rect x="837.1" y="261" width="0.9" height="15.0" fill="rgb(233,130,31)" rx="2" ry="2" />
+<text  x="840.06" y="271.5" ></text>
+</g>
+<g >
+<title>asm_sysvec_apic_timer_interrupt (633,883 samples, 0.02%)</title><rect x="739.8" y="229" width="0.2" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="742.82" y="239.5" ></text>
+</g>
+<g >
+<title>__hrtimer_run_queues (687,508 samples, 0.02%)</title><rect x="208.9" y="165" width="0.2" height="15.0" fill="rgb(237,150,35)" rx="2" ry="2" />
+<text  x="211.93" y="175.5" ></text>
+</g>
+<g >
+<title>exc_page_fault (559,308 samples, 0.01%)</title><rect x="1189.0" y="229" width="0.1" height="15.0" fill="rgb(212,35,8)" rx="2" ry="2" />
+<text  x="1191.96" y="239.5" ></text>
+</g>
+<g >
+<title>Vector::operator- (3,242,953 samples, 0.08%)</title><rect x="558.6" y="229" width="0.9" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="561.59" y="239.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (10,874,502 samples, 0.26%)</title><rect x="451.2" y="229" width="3.1" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="454.23" y="239.5" ></text>
+</g>
+<g >
+<title>solveScalers (14,047,599 samples, 0.34%)</title><rect x="507.4" y="245" width="3.9" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="510.35" y="255.5" ></text>
+</g>
+<g >
+<title>Vector::operator- (2,221,123 samples, 0.05%)</title><rect x="304.7" y="261" width="0.6" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="307.69" y="271.5" ></text>
+</g>
+<g >
+<title>Vector::dot (4,782,303 samples, 0.12%)</title><rect x="447.8" y="245" width="1.4" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="450.82" y="255.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (26,054,110 samples, 0.63%)</title><rect x="1119.1" y="245" width="7.4" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="1122.11" y="255.5" ></text>
+</g>
+<g >
+<title>asm_sysvec_apic_timer_interrupt (1,933,620 samples, 0.05%)</title><rect x="1019.3" y="245" width="0.5" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="1022.29" y="255.5" ></text>
+</g>
+<g >
+<title>Box::getIntersection (7,974,865 samples, 0.19%)</title><rect x="15.8" y="293" width="2.3" height="15.0" fill="rgb(217,59,14)" rx="2" ry="2" />
+<text  x="18.80" y="303.5" ></text>
+</g>
+<g >
+<title>entry_SYSCALL_64_after_hwframe (634,447 samples, 0.02%)</title><rect x="1189.7" y="277" width="0.2" height="15.0" fill="rgb(218,63,15)" rx="2" ry="2" />
+<text  x="1192.72" y="287.5" ></text>
+</g>
+<g >
+<title>std::numeric_limits&lt;double&gt;::infinity (1,958,959 samples, 0.05%)</title><rect x="567.0" y="229" width="0.5" height="15.0" fill="rgb(249,202,48)" rx="2" ry="2" />
+<text  x="569.99" y="239.5" ></text>
+</g>
+<g >
+<title>x64_sys_call (957,886 samples, 0.02%)</title><rect x="1189.4" y="229" width="0.3" height="15.0" fill="rgb(247,194,46)" rx="2" ry="2" />
+<text  x="1192.45" y="239.5" ></text>
+</g>
+<g >
+<title>hrtimer_interrupt (597,688 samples, 0.01%)</title><rect x="819.9" y="197" width="0.2" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="822.93" y="207.5" ></text>
+</g>
+<g >
+<title>asm_sysvec_apic_timer_interrupt (612,580 samples, 0.01%)</title><rect x="534.4" y="261" width="0.2" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="537.43" y="271.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (2,797,517 samples, 0.07%)</title><rect x="366.0" y="261" width="0.7" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="368.95" y="271.5" ></text>
+</g>
+<g >
+<title>Vector::operator- (6,931,705 samples, 0.17%)</title><rect x="311.6" y="261" width="2.0" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="314.63" y="271.5" ></text>
+</g>
+<g >
+<title>__sqrt (1,543,111 samples, 0.04%)</title><rect x="1149.8" y="261" width="0.4" height="15.0" fill="rgb(227,103,24)" rx="2" ry="2" />
+<text  x="1152.78" y="271.5" ></text>
+</g>
+<g >
+<title>Vector::operator+ (26,034,426 samples, 0.63%)</title><rect x="454.3" y="245" width="7.4" height="15.0" fill="rgb(227,102,24)" rx="2" ry="2" />
+<text  x="457.32" y="255.5" ></text>
+</g>
+<g >
+<title>_dl_map_object (550,630 samples, 0.01%)</title><rect x="1188.6" y="213" width="0.1" height="15.0" fill="rgb(248,199,47)" rx="2" ry="2" />
+<text  x="1191.56" y="223.5" ></text>
+</g>
+<g >
+<title>cfree@GLIBC_2.2.5 (3,827,964 samples, 0.09%)</title><rect x="629.5" y="261" width="1.1" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="632.53" y="271.5" ></text>
+</g>
+<g >
+<title>update_process_times (981,096 samples, 0.02%)</title><rect x="445.0" y="117" width="0.3" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="448.00" y="127.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (6,336,314 samples, 0.15%)</title><rect x="1053.9" y="229" width="1.8" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="1056.91" y="239.5" ></text>
+</g>
+<g >
+<title>__sysvec_apic_timer_interrupt (634,770 samples, 0.02%)</title><rect x="1147.4" y="213" width="0.1" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="1150.35" y="223.5" ></text>
+</g>
+<g >
+<title>do_anonymous_page (906,121 samples, 0.02%)</title><rect x="296.5" y="165" width="0.3" height="15.0" fill="rgb(238,155,37)" rx="2" ry="2" />
+<text  x="299.52" y="175.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (651,801 samples, 0.02%)</title><rect x="311.4" y="261" width="0.2" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="314.45" y="271.5" ></text>
+</g>
+<g >
+<title>calcColor (4,095,944,817 samples, 98.51%)</title><rect x="25.1" y="293" width="1162.4" height="15.0" fill="rgb(209,19,4)" rx="2" ry="2" />
+<text  x="28.14" y="303.5" >calcColor</text>
+</g>
+<g >
+<title>task_tick_fair (585,353 samples, 0.01%)</title><rect x="291.8" y="101" width="0.2" height="15.0" fill="rgb(217,57,13)" rx="2" ry="2" />
+<text  x="294.84" y="111.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (15,426,467 samples, 0.37%)</title><rect x="287.4" y="245" width="4.4" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="290.38" y="255.5" ></text>
+</g>
+<g >
+<title>solveScalers (26,020,501 samples, 0.63%)</title><rect x="559.6" y="229" width="7.4" height="15.0" fill="rgb(209,20,4)" rx="2" ry="2" />
+<text  x="562.60" y="239.5" ></text>
+</g>
+<g >
+<title>Vector::operator* (20,907,610 samples, 0.50%)</title><rect x="354.0" y="277" width="5.9" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="356.95" y="287.5" ></text>
+</g>
+<g >
+<title>asm_exc_page_fault (1,538,464 samples, 0.04%)</title><rect x="296.3" y="261" width="0.5" height="15.0" fill="rgb(225,93,22)" rx="2" ry="2" />
+<text  x="299.34" y="271.5" ></text>
+</g>
+<g >
+<title>asm_sysvec_apic_timer_interrupt (2,203,975 samples, 0.05%)</title><rect x="444.7" y="229" width="0.7" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="447.74" y="239.5" ></text>
+</g>
+<g >
+<title>__sysvec_apic_timer_interrupt (687,307 samples, 0.02%)</title><rect x="603.2" y="181" width="0.2" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="606.20" y="191.5" ></text>
+</g>
+<g >
+<title>all (4,158,064,187 samples, 100%)</title><rect x="10.0" y="357" width="1180.0" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="13.00" y="367.5" ></text>
+</g>
+<g >
+<title>Vector::operator* (1,915,965 samples, 0.05%)</title><rect x="303.5" y="261" width="0.6" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="306.51" y="271.5" ></text>
+</g>
+<g >
+<title>Plane::getLightIntersection (33,982,052 samples, 0.82%)</title><rect x="768.8" y="245" width="9.7" height="15.0" fill="rgb(226,99,23)" rx="2" ry="2" />
+<text  x="771.85" y="255.5" ></text>
+</g>
+<g >
+<title>std::numeric_limits&lt;double&gt;::infinity (10,825,817 samples, 0.26%)</title><rect x="292.2" y="261" width="3.1" height="15.0" fill="rgb(249,202,48)" rx="2" ry="2" />
+<text  x="295.20" y="271.5" ></text>
+</g>
+<g >
+<title>Vector::dot (1,275,870 samples, 0.03%)</title><rect x="303.0" y="245" width="0.3" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="305.97" y="255.5" ></text>
+</g>
+<g >
+<title>sysvec_apic_timer_interrupt (633,883 samples, 0.02%)</title><rect x="739.8" y="213" width="0.2" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="742.82" y="223.5" ></text>
+</g>
+<g >
+<title>hrtimer_interrupt (637,336 samples, 0.02%)</title><rect x="369.4" y="229" width="0.2" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="372.43" y="239.5" ></text>
+</g>
+<g >
+<title>insertionSort (93,904,284 samples, 2.26%)</title><rect x="1152.2" y="277" width="26.6" height="15.0" fill="rgb(248,200,48)" rx="2" ry="2" />
+<text  x="1155.17" y="287.5" >i..</text>
+</g>
+<g >
+<title>ColorTexture::getColor (1,538,464 samples, 0.04%)</title><rect x="296.3" y="277" width="0.5" height="15.0" fill="rgb(230,118,28)" rx="2" ry="2" />
+<text  x="299.34" y="287.5" ></text>
+</g>
+<g >
+<title>tick_nohz_highres_handler (951,287 samples, 0.02%)</title><rect x="219.7" y="181" width="0.3" height="15.0" fill="rgb(215,50,11)" rx="2" ry="2" />
+<text  x="222.69" y="191.5" ></text>
+</g>
+<g >
+<title>tick_nohz_highres_handler (634,802 samples, 0.02%)</title><rect x="348.9" y="181" width="0.1" height="15.0" fill="rgb(215,50,11)" rx="2" ry="2" />
+<text  x="351.85" y="191.5" ></text>
+</g>
+<g >
+<title>tick_nohz_highres_handler (1,223,166 samples, 0.03%)</title><rect x="291.8" y="165" width="0.3" height="15.0" fill="rgb(215,50,11)" rx="2" ry="2" />
+<text  x="294.76" y="175.5" ></text>
+</g>
+<g >
+<title>tick_nohz_highres_handler (1,614,530 samples, 0.04%)</title><rect x="1019.4" y="165" width="0.4" height="15.0" fill="rgb(215,50,11)" rx="2" ry="2" />
+<text  x="1022.38" y="175.5" ></text>
+</g>
+<g >
+<title>Vector::dot (931,332 samples, 0.02%)</title><rect x="502.8" y="245" width="0.2" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="505.77" y="255.5" ></text>
+</g>
+<g >
+<title>Ray::Ray (54,214,642 samples, 1.30%)</title><rect x="1075.3" y="261" width="15.3" height="15.0" fill="rgb(238,153,36)" rx="2" ry="2" />
+<text  x="1078.26" y="271.5" ></text>
+</g>
+<g >
+<title>_int_free (1,948,236 samples, 0.05%)</title><rect x="575.3" y="229" width="0.6" height="15.0" fill="rgb(247,196,46)" rx="2" ry="2" />
+<text  x="578.34" y="239.5" ></text>
+</g>
+<g >
+<title>Vector::operator- (1,565,733 samples, 0.04%)</title><rect x="791.5" y="229" width="0.5" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="794.54" y="239.5" ></text>
+</g>
+<g >
+<title>hrtimer_interrupt (662,005 samples, 0.02%)</title><rect x="1055.8" y="181" width="0.2" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="1058.80" y="191.5" ></text>
+</g>
+<g >
+<title>sysvec_apic_timer_interrupt (930,754 samples, 0.02%)</title><rect x="1178.6" y="245" width="0.2" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="1181.55" y="255.5" ></text>
+</g>
+<g >
+<title>__x64_sys_exit_group (632,070 samples, 0.02%)</title><rect x="1189.3" y="277" width="0.1" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="1192.27" y="287.5" ></text>
+</g>
+<g >
+<title>hrtimer_interrupt (1,566,502 samples, 0.04%)</title><rect x="291.8" y="197" width="0.4" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="294.76" y="207.5" ></text>
+</g>
+<g >
+<title>sysvec_apic_timer_interrupt (634,802 samples, 0.02%)</title><rect x="348.9" y="245" width="0.1" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="351.85" y="255.5" ></text>
+</g>
+<g >
+<title>Plane::getIntersection (1,971,871 samples, 0.05%)</title><rect x="567.9" y="229" width="0.6" height="15.0" fill="rgb(232,126,30)" rx="2" ry="2" />
+<text  x="570.91" y="239.5" ></text>
+</g>
+<g >
+<title>handle_mm_fault (1,224,571 samples, 0.03%)</title><rect x="296.4" y="213" width="0.4" height="15.0" fill="rgb(234,135,32)" rx="2" ry="2" />
+<text  x="299.43" y="223.5" ></text>
+</g>
+<g >
+<title>do_writepages (634,447 samples, 0.02%)</title><rect x="1189.7" y="101" width="0.2" height="15.0" fill="rgb(240,164,39)" rx="2" ry="2" />
+<text  x="1192.72" y="111.5" ></text>
+</g>
+<g >
+<title>asm_sysvec_apic_timer_interrupt (612,867 samples, 0.01%)</title><rect x="1075.1" y="245" width="0.2" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="1078.09" y="255.5" ></text>
+</g>
+<g >
+<title>task_tick_fair (611,480 samples, 0.01%)</title><rect x="1090.4" y="101" width="0.2" height="15.0" fill="rgb(217,57,13)" rx="2" ry="2" />
+<text  x="1093.38" y="111.5" ></text>
+</g>
+<g >
+<title>Vector::dot (637,341 samples, 0.02%)</title><rect x="568.3" y="213" width="0.2" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="571.29" y="223.5" ></text>
+</g>
+<g >
+<title>Vector::operator- (21,203,926 samples, 0.51%)</title><rect x="1013.3" y="245" width="6.0" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="1016.27" y="255.5" ></text>
+</g>
+<g >
+<title>update_process_times (634,770 samples, 0.02%)</title><rect x="1147.4" y="133" width="0.1" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="1150.35" y="143.5" ></text>
+</g>
+<g >
+<title>sysvec_apic_timer_interrupt (956,230 samples, 0.02%)</title><rect x="1150.7" y="245" width="0.3" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="1153.73" y="255.5" ></text>
+</g>
+<g >
+<title>__sysvec_apic_timer_interrupt (637,026 samples, 0.02%)</title><rect x="611.4" y="165" width="0.2" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="614.41" y="175.5" ></text>
+</g>
+<g >
+<title>sysvec_apic_timer_interrupt (951,287 samples, 0.02%)</title><rect x="219.7" y="245" width="0.3" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="222.69" y="255.5" ></text>
+</g>
+<g >
+<title>Box::getIntersection (831,158,856 samples, 19.99%)</title><rect x="59.5" y="277" width="235.9" height="15.0" fill="rgb(217,59,14)" rx="2" ry="2" />
+<text  x="62.49" y="287.5" >Box::getIntersection</text>
+</g>
+<g >
+<title>filemap_flush (634,447 samples, 0.02%)</title><rect x="1189.7" y="149" width="0.2" height="15.0" fill="rgb(231,120,28)" rx="2" ry="2" />
+<text  x="1192.72" y="159.5" ></text>
+</g>
+<g >
+<title>Vector::operator- (8,820,917 samples, 0.21%)</title><rect x="366.8" y="277" width="2.5" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="369.84" y="287.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (643,652 samples, 0.02%)</title><rect x="526.0" y="245" width="0.1" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="528.97" y="255.5" ></text>
+</g>
+<g >
+<title>__x64_sys_write (957,886 samples, 0.02%)</title><rect x="1189.4" y="213" width="0.3" height="15.0" fill="rgb(246,189,45)" rx="2" ry="2" />
+<text  x="1192.45" y="223.5" ></text>
+</g>
+<g >
+<title>Vector::operator+ (5,521,722 samples, 0.13%)</title><rect x="557.0" y="229" width="1.6" height="15.0" fill="rgb(227,102,24)" rx="2" ry="2" />
+<text  x="560.02" y="239.5" ></text>
+</g>
+<g >
+<title>Vector::normalize (2,929,190 samples, 0.07%)</title><rect x="525.8" y="261" width="0.8" height="15.0" fill="rgb(252,218,52)" rx="2" ry="2" />
+<text  x="528.78" y="271.5" ></text>
+</g>
+<g >
+<title>asm_exc_page_fault (559,308 samples, 0.01%)</title><rect x="1189.0" y="245" width="0.1" height="15.0" fill="rgb(225,93,22)" rx="2" ry="2" />
+<text  x="1191.96" y="255.5" ></text>
+</g>
+<g >
+<title>tick_nohz_highres_handler (930,271 samples, 0.02%)</title><rect x="1090.3" y="165" width="0.3" height="15.0" fill="rgb(215,50,11)" rx="2" ry="2" />
+<text  x="1093.29" y="175.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (4,400,488 samples, 0.11%)</title><rect x="764.5" y="213" width="1.3" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="767.52" y="223.5" ></text>
+</g>
+<g >
+<title>__sysvec_apic_timer_interrupt (951,287 samples, 0.02%)</title><rect x="219.7" y="229" width="0.3" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="222.69" y="239.5" ></text>
+</g>
+<g >
+<title>Box::getLightIntersection (380,587,176 samples, 9.15%)</title><rect x="658.0" y="245" width="108.0" height="15.0" fill="rgb(212,32,7)" rx="2" ry="2" />
+<text  x="660.95" y="255.5" >Box::getLight..</text>
+</g>
+<g >
+<title>Vector::operator+ (3,817,848 samples, 0.09%)</title><rect x="600.2" y="213" width="1.1" height="15.0" fill="rgb(227,102,24)" rx="2" ry="2" />
+<text  x="603.21" y="223.5" ></text>
+</g>
+<g >
+<title>scheduler_tick (930,271 samples, 0.02%)</title><rect x="1090.3" y="117" width="0.3" height="15.0" fill="rgb(246,190,45)" rx="2" ry="2" />
+<text  x="1093.29" y="127.5" ></text>
+</g>
+<g >
+<title>tick_sched_handle (637,026 samples, 0.02%)</title><rect x="611.4" y="101" width="0.2" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="614.41" y="111.5" ></text>
+</g>
+<g >
+<title>Plane::getIntersection (6,815,327 samples, 0.16%)</title><rect x="569.9" y="245" width="2.0" height="15.0" fill="rgb(232,126,30)" rx="2" ry="2" />
+<text  x="572.95" y="255.5" ></text>
+</g>
+<g >
+<title>Vector::operator- (1,275,658 samples, 0.03%)</title><rect x="524.1" y="245" width="0.3" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="527.08" y="255.5" ></text>
+</g>
+<g >
+<title>sysvec_apic_timer_interrupt (661,427 samples, 0.02%)</title><rect x="765.8" y="197" width="0.2" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="768.77" y="207.5" ></text>
+</g>
+<g >
+<title>fmod@@GLIBC_2.38 (945,440 samples, 0.02%)</title><rect x="851.1" y="261" width="0.3" height="15.0" fill="rgb(205,1,0)" rx="2" ry="2" />
+<text  x="854.09" y="271.5" ></text>
+</g>
+<g >
+<title>__mmput (632,070 samples, 0.02%)</title><rect x="1189.3" y="197" width="0.1" height="15.0" fill="rgb(249,203,48)" rx="2" ry="2" />
+<text  x="1192.27" y="207.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (12,408,247 samples, 0.30%)</title><rect x="216.1" y="245" width="3.5" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="219.07" y="255.5" ></text>
+</g>
+<g >
+<title>Sphere::getIntersection (18,871,747 samples, 0.45%)</title><rect x="519.1" y="261" width="5.3" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="522.09" y="271.5" ></text>
+</g>
+<g >
+<title>sqrt@plt (1,577,537 samples, 0.04%)</title><rect x="1151.3" y="261" width="0.4" height="15.0" fill="rgb(220,73,17)" rx="2" ry="2" />
+<text  x="1154.26" y="271.5" ></text>
+</g>
+<g >
+<title>Vector::operator* (25,078,892 samples, 0.60%)</title><rect x="720.4" y="229" width="7.1" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="723.36" y="239.5" ></text>
+</g>
+<g >
+<title>__sysvec_apic_timer_interrupt (634,802 samples, 0.02%)</title><rect x="348.9" y="229" width="0.1" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="351.85" y="239.5" ></text>
+</g>
+<g >
+<title>Vector::operator* (28,456,510 samples, 0.68%)</title><rect x="798.4" y="245" width="8.1" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="801.41" y="255.5" ></text>
+</g>
+<g >
+<title>update_process_times (1,614,530 samples, 0.04%)</title><rect x="1019.4" y="133" width="0.4" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="1022.38" y="143.5" ></text>
+</g>
+<g >
+<title>update_process_times (951,287 samples, 0.02%)</title><rect x="219.7" y="149" width="0.3" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="222.69" y="159.5" ></text>
+</g>
+<g >
+<title>__sqrt (1,208,922 samples, 0.03%)</title><rect x="819.3" y="245" width="0.4" height="15.0" fill="rgb(227,103,24)" rx="2" ry="2" />
+<text  x="822.32" y="255.5" ></text>
+</g>
+<g >
+<title>dl_main (2,508,402 samples, 0.06%)</title><rect x="1188.6" y="277" width="0.7" height="15.0" fill="rgb(236,145,34)" rx="2" ry="2" />
+<text  x="1191.56" y="287.5" ></text>
+</g>
+<g >
+<title>ext4_do_writepages (634,447 samples, 0.02%)</title><rect x="1189.7" y="69" width="0.2" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="1192.72" y="79.5" ></text>
+</g>
+<g >
+<title>Box::getLightIntersection (2,493,364 samples, 0.06%)</title><rect x="498.8" y="261" width="0.7" height="15.0" fill="rgb(212,32,7)" rx="2" ry="2" />
+<text  x="501.81" y="271.5" ></text>
+</g>
+<g >
+<title>ImageTexture::getColor (2,958,014 samples, 0.07%)</title><rect x="307.3" y="277" width="0.9" height="15.0" fill="rgb(211,30,7)" rx="2" ry="2" />
+<text  x="310.32" y="287.5" ></text>
+</g>
+<g >
+<title>Plane::getLightIntersection (50,107,442 samples, 1.21%)</title><rect x="1061.0" y="261" width="14.3" height="15.0" fill="rgb(226,99,23)" rx="2" ry="2" />
+<text  x="1064.04" y="271.5" ></text>
+</g>
+<g >
+<title>__sysvec_apic_timer_interrupt (1,566,502 samples, 0.04%)</title><rect x="291.8" y="213" width="0.4" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="294.76" y="223.5" ></text>
+</g>
+<g >
+<title>__x64_sys_close (634,447 samples, 0.02%)</title><rect x="1189.7" y="229" width="0.2" height="15.0" fill="rgb(231,123,29)" rx="2" ry="2" />
+<text  x="1192.72" y="239.5" ></text>
+</g>
+<g >
+<title>tick_nohz_highres_handler (637,336 samples, 0.02%)</title><rect x="369.4" y="197" width="0.2" height="15.0" fill="rgb(215,50,11)" rx="2" ry="2" />
+<text  x="372.43" y="207.5" ></text>
+</g>
+<g >
+<title>update_process_times (597,688 samples, 0.01%)</title><rect x="819.9" y="133" width="0.2" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="822.93" y="143.5" ></text>
+</g>
+<g >
+<title>tick_sched_handle (1,614,530 samples, 0.04%)</title><rect x="1019.4" y="149" width="0.4" height="15.0" fill="rgb(219,68,16)" rx="2" ry="2" />
+<text  x="1022.38" y="159.5" ></text>
+</g>
+<g >
+<title>sysvec_apic_timer_interrupt (2,143,793 samples, 0.05%)</title><rect x="167.9" y="229" width="0.6" height="15.0" fill="rgb(220,69,16)" rx="2" ry="2" />
+<text  x="170.89" y="239.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (12,577,844 samples, 0.30%)</title><rect x="1000.2" y="229" width="3.6" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="1003.20" y="239.5" ></text>
+</g>
+<g >
+<title>asm_sysvec_apic_timer_interrupt (637,026 samples, 0.02%)</title><rect x="611.4" y="197" width="0.2" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="614.41" y="207.5" ></text>
+</g>
+<g >
+<title>fclose@@GLIBC_2.2.5 (634,447 samples, 0.02%)</title><rect x="1189.7" y="309" width="0.2" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="1192.72" y="319.5" ></text>
+</g>
+<g >
+<title>tick_nohz_highres_handler (661,427 samples, 0.02%)</title><rect x="765.8" y="133" width="0.2" height="15.0" fill="rgb(215,50,11)" rx="2" ry="2" />
+<text  x="768.77" y="143.5" ></text>
+</g>
+<g >
+<title>Vector::dot (683,962 samples, 0.02%)</title><rect x="571.5" y="229" width="0.2" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="574.50" y="239.5" ></text>
+</g>
+<g >
+<title>asm_sysvec_apic_timer_interrupt (951,287 samples, 0.02%)</title><rect x="219.7" y="261" width="0.3" height="15.0" fill="rgb(232,127,30)" rx="2" ry="2" />
+<text  x="222.69" y="271.5" ></text>
+</g>
+<g >
+<title>hrtimer_interrupt (634,770 samples, 0.02%)</title><rect x="1147.4" y="197" width="0.1" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="1150.35" y="207.5" ></text>
+</g>
+<g >
+<title>update_process_times (637,336 samples, 0.02%)</title><rect x="369.4" y="165" width="0.2" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="372.43" y="175.5" ></text>
+</g>
+<g >
+<title>__sysvec_apic_timer_interrupt (633,883 samples, 0.02%)</title><rect x="739.8" y="197" width="0.2" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="742.82" y="207.5" ></text>
+</g>
+<g >
+<title>tick_nohz_highres_handler (687,307 samples, 0.02%)</title><rect x="603.2" y="133" width="0.2" height="15.0" fill="rgb(215,50,11)" rx="2" ry="2" />
+<text  x="606.20" y="143.5" ></text>
+</g>
+<g >
+<title>do_lookup_x (567,405 samples, 0.01%)</title><rect x="1188.8" y="229" width="0.2" height="15.0" fill="rgb(245,187,44)" rx="2" ry="2" />
+<text  x="1191.79" y="239.5" ></text>
+</g>
+<g >
+<title>Sphere::getIntersection (39,863,742 samples, 0.96%)</title><rect x="337.7" y="277" width="11.3" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="340.72" y="287.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (11,811,090 samples, 0.28%)</title><rect x="724.1" y="213" width="3.4" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="727.13" y="223.5" ></text>
+</g>
+<g >
+<title>Vector::dot (8,458,275 samples, 0.20%)</title><rect x="794.3" y="245" width="2.4" height="15.0" fill="rgb(251,213,51)" rx="2" ry="2" />
+<text  x="797.30" y="255.5" ></text>
+</g>
+<g >
+<title>Sphere::getLightIntersection (637,418 samples, 0.02%)</title><rect x="524.4" y="261" width="0.2" height="15.0" fill="rgb(207,13,3)" rx="2" ry="2" />
+<text  x="527.44" y="271.5" ></text>
+</g>
+<g >
+<title>__atan2 (1,946,572 samples, 0.05%)</title><rect x="792.0" y="229" width="0.5" height="15.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="794.98" y="239.5" ></text>
+</g>
+<g >
+<title>Ray::Ray (2,273,919 samples, 0.05%)</title><rect x="18.7" y="293" width="0.6" height="15.0" fill="rgb(238,153,36)" rx="2" ry="2" />
+<text  x="21.68" y="303.5" ></text>
+</g>
+<g >
+<title>Vector::Vector (10,275,484 samples, 0.25%)</title><rect x="1010.3" y="229" width="2.9" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="1013.26" y="239.5" ></text>
+</g>
+<g >
+<title>Vector::mag (6,039,928 samples, 0.15%)</title><rect x="796.7" y="245" width="1.7" height="15.0" fill="rgb(217,58,14)" rx="2" ry="2" />
+<text  x="799.70" y="255.5" ></text>
+</g>
+<g >
+<title>operator* (7,212,686 samples, 0.17%)</title><rect x="1180.6" y="277" width="2.0" height="15.0" fill="rgb(233,130,31)" rx="2" ry="2" />
+<text  x="1183.59" y="287.5" ></text>
+</g>
+<g >
+<title>tick_nohz_highres_handler (634,770 samples, 0.02%)</title><rect x="1147.4" y="165" width="0.1" height="15.0" fill="rgb(215,50,11)" rx="2" ry="2" />
+<text  x="1150.35" y="175.5" ></text>
+</g>
+<g >
+<title>__sysvec_apic_timer_interrupt (1,250,403 samples, 0.03%)</title><rect x="1090.3" y="213" width="0.3" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="1093.29" y="223.5" ></text>
+</g>
+<g >
+<title>tick_do_update_jiffies64 (611,594 samples, 0.01%)</title><rect x="444.7" y="117" width="0.2" height="15.0" fill="rgb(208,14,3)" rx="2" ry="2" />
+<text  x="447.74" y="127.5" ></text>
+</g>
+<g >
+<title>do_user_addr_fault (1,538,464 samples, 0.04%)</title><rect x="296.3" y="229" width="0.5" height="15.0" fill="rgb(228,108,25)" rx="2" ry="2" />
+<text  x="299.34" y="239.5" ></text>
+</g>
+<g >
+<title>do_group_exit (632,070 samples, 0.02%)</title><rect x="1189.3" y="261" width="0.1" height="15.0" fill="rgb(219,67,16)" rx="2" ry="2" />
+<text  x="1192.27" y="271.5" ></text>
+</g>
+<g >
+<title>asm_exc_page_fault (662,419 samples, 0.02%)</title><rect x="308.0" y="261" width="0.2" height="15.0" fill="rgb(225,93,22)" rx="2" ry="2" />
+<text  x="310.97" y="271.5" ></text>
+</g>
+<g >
+<title>pvclock_gtod_notify (611,594 samples, 0.01%)</title><rect x="444.7" y="37" width="0.2" height="15.0" fill="rgb(241,169,40)" rx="2" ry="2" />
+<text  x="447.74" y="47.5" ></text>
+</g>
+<g >
+<title>Vector::operator* (7,410,007 samples, 0.18%)</title><rect x="598.1" y="213" width="2.1" height="15.0" fill="rgb(233,131,31)" rx="2" ry="2" />
+<text  x="601.11" y="223.5" ></text>
+</g>
+<g >
+<title>hrtimer_interrupt (612,580 samples, 0.01%)</title><rect x="534.4" y="213" width="0.2" height="15.0" fill="rgb(228,109,26)" rx="2" ry="2" />
+<text  x="537.43" y="223.5" ></text>
+</g>
+<g >
+<title>Sphere::getLightIntersection (21,544,374 samples, 0.52%)</title><rect x="786.5" y="245" width="6.1" height="15.0" fill="rgb(207,13,3)" rx="2" ry="2" />
+<text  x="789.51" y="255.5" ></text>
+</g>
+<g >
+<title>tick_nohz_highres_handler (1,558,272 samples, 0.04%)</title><rect x="167.9" y="165" width="0.4" height="15.0" fill="rgb(215,50,11)" rx="2" ry="2" />
+<text  x="170.89" y="175.5" ></text>
+</g>
+<g >
+<title>__hrtimer_run_queues (930,271 samples, 0.02%)</title><rect x="1090.3" y="181" width="0.3" height="15.0" fill="rgb(237,150,35)" rx="2" ry="2" />
+<text  x="1093.29" y="191.5" ></text>
+</g>
+<g >
+<title>_dl_start (2,508,402 samples, 0.06%)</title><rect x="1188.6" y="309" width="0.7" height="15.0" fill="rgb(237,151,36)" rx="2" ry="2" />
+<text  x="1191.56" y="319.5" ></text>
+</g>
+<g >
+<title>Vector::operator- (4,373,376 samples, 0.11%)</title><rect x="1097.4" y="245" width="1.2" height="15.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="1100.37" y="255.5" ></text>
+</g>
+<g >
+<title>__sysvec_apic_timer_interrupt (612,580 samples, 0.01%)</title><rect x="534.4" y="229" width="0.2" height="15.0" fill="rgb(242,173,41)" rx="2" ry="2" />
+<text  x="537.43" y="239.5" ></text>
+</g>
+<g >
+<title>_dl_sysdep_start (2,508,402 samples, 0.06%)</title><rect x="1188.6" y="293" width="0.7" height="15.0" fill="rgb(234,137,32)" rx="2" ry="2" />
+<text  x="1191.56" y="303.5" ></text>
+</g>
+</g>
+</svg>
