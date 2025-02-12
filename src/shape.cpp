@@ -54,30 +54,18 @@ void insertionSort(TimeAndShape *arr, int n) {
 void calcColor(unsigned char *toFill, Autonoma *c, Ray ray,
                unsigned int depth) {
   ShapeNode *t = c->listStart;
-  TimeAndShape *times = (TimeAndShape *)malloc(0);
-  size_t cap = 0;
-  int cap_increase = 25;
-  size_t seen = 0;
+  double curTime = inf;
+  Shape *curShape = nullptr;
   while (t != NULL) {
     double time = t->data->getIntersection(ray);
-    if (seen == cap) {
-      cap += cap_increase;
-      TimeAndShape *times2 =
-          (TimeAndShape *)malloc(sizeof(TimeAndShape) * (cap));
-      for (int i = 0; i < seen; i++) {
-        times2[i] = times[i];
-      }
-      times2[seen] = (TimeAndShape){time, t->data};
-      free(times);
-      times = times2;
-    } else {
-      times[seen] = (TimeAndShape) {time, t->data};
+    if (time < curTime) {
+      curTime = time;
+      curShape = t->data;
     }
-    seen++;
     t = t->next;
   }
-  insertionSort(times, seen);
-  if (seen == 0 || times[0].time == inf) {
+
+  if (curTime == inf) {
     double opacity, reflection, ambient;
     Vector temp = ray.vector.normalize();
     const double x = temp.x;
@@ -88,10 +76,6 @@ void calcColor(unsigned char *toFill, Autonoma *c, Ray ray,
                         fix(angle / M_TWO_PI), fix(me));
     return;
   }
-
-  double curTime = times[0].time;
-  Shape *curShape = times[0].shape;
-  free(times);
 
   Vector intersect = curTime * ray.vector + ray.point;
   double opacity, reflection, ambient;
@@ -107,7 +91,7 @@ void calcColor(unsigned char *toFill, Autonoma *c, Ray ray,
       (unsigned char)(toFill[1] * (ambient + lightData[1] * (1 - ambient)));
   toFill[2] =
       (unsigned char)(toFill[2] * (ambient + lightData[2] * (1 - ambient)));
-  if (depth < c->depth && (opacity < 1 - 1e-6 || reflection > 1e-6)) {
+  if (depth < c->depth) {
     unsigned char col[4];
     if (opacity < 1 - 1e-6) {
       Ray nextRay = Ray(intersect + ray.vector * 1E-4, ray.vector);
