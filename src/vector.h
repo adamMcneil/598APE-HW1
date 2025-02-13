@@ -74,11 +74,14 @@ inline Vector operator/(const float a, const Vector b) {
 
 double computeDenom(const Vector v1, const Vector v2, const Vector v3);
 
-double computeX(const Vector v2, const Vector v3, const Vector C, const double denom);
+double computeX(const Vector v2, const Vector v3, const Vector C,
+                const double denom);
 
-double computeY(const Vector v1, const Vector v3, const Vector C, const double denom);
+double computeY(const Vector v1, const Vector v3, const Vector C,
+                const double denom);
 
-double computeZ(const Vector v1, const Vector v2, const Vector C, const double denom);
+double computeZ(const Vector v1, const Vector v2, const Vector C,
+                const double denom);
 
 Vector solveScalers(Vector v1, Vector v2, Vector v3, Vector solve);
 
