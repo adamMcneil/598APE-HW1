@@ -3,10 +3,14 @@
 
 Box::Box(const Vector &c, Texture *t, double ya, double pi, double ro,
          double tx, double ty)
-    : Plane(c, t, ya, pi, ro, tx, ty) {}
+    : Plane(c, t, ya, pi, ro, tx, ty) {
+    boundingRadius = sqrt(textureX*textureX + textureY*textureY) / 2.0;
+}
 Box::Box(const Vector &c, Texture *t, double ya, double pi, double ro,
          double tx)
-    : Plane(c, t, ya, pi, ro, tx, tx) {}
+    : Plane(c, t, ya, pi, ro, tx, tx) {
+    boundingRadius = sqrt(2.0) * textureX / 2.0;
+}
 
 double Box::getIntersection(Ray ray) {
   double time = Plane::getIntersection(ray);
@@ -60,4 +64,17 @@ bool Box::getLightIntersection(Ray ray, double *fill) {
   fill[1] *= temp[1] / 255.;
   fill[2] *= temp[2] / 255.;
   return false;
+}
+
+bool Box::canSkipByBoundingSphere(const Ray &ray) const {
+    Vector dp = ray.point - center;
+    double A = ray.vector.mag2();
+    double B = 2.0 * dp.dot(ray.vector);
+    double C = dp.mag2() - boundingRadius*boundingRadius;
+
+    double disc = B*B - 4*A*C;
+    if (disc < 0.0) {
+        return true; // No intersection => skip rendering this box
+    }
+    return false;
 }

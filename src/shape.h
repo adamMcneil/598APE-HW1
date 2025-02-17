@@ -22,6 +22,13 @@ public:
   virtual void setYaw(double d) = 0;
   virtual void setPitch(double d) = 0;
   virtual void setRoll(double d) = 0;
+  virtual bool canSkipByBoundingSphere(const Ray &ray) {
+    return false;
+  }
+
+protected:
+  double boundingRadius;
+  Vector boundingCenter;
 };
 
 void calcColor(unsigned char *toFill, Autonoma *, Ray ray, unsigned int depth);

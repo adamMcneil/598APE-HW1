@@ -1,7 +1,22 @@
 #include "disk.h"
 Disk::Disk(const Vector &c, Texture *t, double ya, double pi, double ro,
            double tx, double ty)
-    : Plane(c, t, ya, pi, ro, tx, ty) {}
+    : Plane(c, t, ya, pi, ro, tx, ty) {
+  boundingRadius = sqrt(tx * tx + ty * ty);
+}
+
+bool Disk::canSkipByBoundingSphere(const Ray &ray) const {
+  Vector dp = ray.point - center;
+  double A = ray.vector.mag2();
+  double B = 2.0 * dp.dot(ray.vector);
+  double C = dp.mag2() - boundingRadius*boundingRadius;
+
+  double disc = B*B - 4*A*C;
+  if (disc < 0.0) {
+    return true; // No intersection => skip rendering this disk
+  }
+  return false;
+}
 
 double Disk::getIntersection(Ray ray) {
   double time = Plane::getIntersection(ray);

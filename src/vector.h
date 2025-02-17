@@ -23,7 +23,7 @@ public:
   void operator/=(const int);
 
   Vector operator+(const Vector);
-  Vector operator-(const Vector);
+  Vector operator-(const Vector) const;
   /*  Vector operator * (const Vector);*/
   Vector operator*(const double);
   Vector operator*(const float);
@@ -32,7 +32,7 @@ public:
   Vector operator/(const float);
   Vector operator/(const int);
   Vector cross(const Vector a);
-  double mag2();
+  double mag2() const;
   double mag();
   double dot(const Vector a);
   Vector normalize();

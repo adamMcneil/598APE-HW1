@@ -2,7 +2,14 @@
 #include <iostream>
 
 Shape::Shape(const Vector &c, Texture *t, double ya, double pi, double ro)
-    : center(c), texture(t), yaw(ya), pitch(pi), roll(ro) {};
+    : center(c),
+      texture(t),
+      yaw(ya),
+      pitch(pi),
+      roll(ro),
+      boundingCenter(0, 0, 0),
+      boundingRadius(0.0) {
+}
 
 void Shape::setAngles(double a, double b, double c) {
   yaw = a;
@@ -56,11 +63,20 @@ void calcColor(unsigned char *toFill, Autonoma *c, Ray ray,
   ShapeNode *t = c->listStart;
   double curTime = inf;
   Shape *curShape = nullptr;
+
   while (t != NULL) {
+    // 1) quick bounding-sphere check:
+    if (t->data->canSkipByBoundingSphere(ray)) {
+        // skip intersection entirely
+        t = t->next;
+        continue;
+    }
+
+    // 2) do actual intersection
     double time = t->data->getIntersection(ray);
     if (time < curTime) {
-      curTime = time;
-      curShape = t->data;
+        curTime = time;
+        curShape = t->data;
     }
     t = t->next;
   }

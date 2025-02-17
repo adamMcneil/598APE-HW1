@@ -6,6 +6,21 @@ Sphere::Sphere(const Vector &c, Texture *t, double ya, double pi, double ro,
   textureX = textureY = 1.;
   normalMap = NULL;
   radius = rad;
+  boundingRadius = rad;
+}
+bool Sphere::canSkipByBoundingSphere(const Ray &ray) const {
+  Vector dp = ray.point - center;
+  double A = ray.vector.mag2();
+  double B = 2.0 * dp.dot(ray.vector);
+  double C = dp.mag2() - boundingRadius * boundingRadius;
+
+  double disc = B * B - 4 * A * C;
+  if (disc < 0.0) {
+    // No intersection => skip
+    return true;
+  }
+  // Otherwise, we *might* intersect => no skip
+  return false;
 }
 bool Sphere::getLightIntersection(Ray ray, double *fill) {
   const double A = ray.vector.mag2();
@@ -28,7 +43,7 @@ bool Sphere::getLightIntersection(Ray ray, double *fill) {
   double amb, op, ref;
   texture->getColor(temp, &amb, &op, &ref,
                     fix((yaw + data2) / M_TWO_PI / textureX),
-                    fix((pitch / M_TWO_PI - (data3))) / textureY);
+                    fix((pitch / M_TWO_PI - data3) / textureY));
   if (op > 1 - 1E-6)
     return true;
   fill[0] *= temp[0] / 255.;
@@ -59,7 +74,7 @@ void Sphere::getColor(unsigned char *toFill, double *amb, double *op,
   double data2 = atan2(ray.point.z - center.z, ray.point.x - center.x);
   texture->getColor(toFill, amb, op, ref,
                     fix((yaw + data2) / M_TWO_PI / textureX),
-                    fix((pitch / M_TWO_PI - (data3)) / textureY));
+                    fix((pitch / M_TWO_PI - data3) / textureY));
 }
 Vector Sphere::getNormal(Vector point) {
   Vector vect = point - center;

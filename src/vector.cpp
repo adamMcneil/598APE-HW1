@@ -49,7 +49,7 @@ void Vector::operator/=(const int rhs) {
   z /= rhs;
 }
 
-Vector Vector::operator-(const Vector rhs) {
+Vector Vector::operator-(const Vector rhs) const {
   return Vector(x - rhs.x, y - rhs.y, z - rhs.z);
 }
 Vector Vector::operator+(const Vector rhs) {
@@ -80,7 +80,9 @@ Vector Vector::operator/(const int rhs) {
 Vector Vector::cross(const Vector a) {
   return Vector(y * a.z - z * a.y, z * a.x - x * a.z, x * a.y - y * a.x);
 }
-double Vector::mag2() { return x * x + y * y + z * z; }
+double Vector::mag2() const {
+  return x * x + y * y + z * z;
+}
 double Vector::mag() { return sqrt(x * x + y * y + z * z); }
 double Vector::dot(const Vector a) { return x * a.x + y * a.y + z * a.z; }
 Vector Vector::normalize() {

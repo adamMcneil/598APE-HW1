@@ -18,5 +18,6 @@ public:
   void setYaw(double a);
   void setPitch(double b);
   void setRoll(double c);
+  bool canSkipByBoundingSphere(const Ray &ray) const;
 };
 #endif

@@ -8,6 +8,7 @@ public:
        double ty);
   double getIntersection(Ray ray);
   bool getLightIntersection(Ray ray, double *fill);
+  bool canSkipByBoundingSphere(const Ray &ray) const;
 };
 
 #endif

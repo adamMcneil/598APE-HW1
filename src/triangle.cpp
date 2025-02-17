@@ -45,6 +45,8 @@ Triangle::Triangle(Vector c, Vector b, Vector a, Texture *t)
   thirdX = np.x;
 
   d = -vect.dot(center);
+
+  boundingRadius = std::fmax((c - a).mag(), (c - b).mag());
 }
 
 double Triangle::getIntersection(Ray ray) {
@@ -90,4 +92,17 @@ bool Triangle::getLightIntersection(Ray ray, double *fill) {
   fill[1] *= temp[1] / 255.;
   fill[2] *= temp[2] / 255.;
   return false;
+}
+
+bool Triangle::canSkipByBoundingSphere(const Ray &ray) const {
+    Vector dp = ray.point - center;
+    double A = ray.vector.mag2();
+    double B = 2.0 * dp.dot(ray.vector);
+    double C = dp.mag2() - boundingRadius*boundingRadius;
+
+    double disc = B*B - 4*A*C;
+    if (disc < 0.0) {
+        return true; // No intersection => skip rendering this triangle
+    }
+    return false;
 }

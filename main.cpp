@@ -13,7 +13,6 @@
 #include<stdlib.h>
 #include <string.h>
 #include <iostream>
-#include <omp.h>
 using namespace std;
 
 #include <sys/time.h>
@@ -46,19 +45,10 @@ void set(int i, int j, unsigned char r, unsigned char g, unsigned char b){
    DATA[3*(i+j*W)+2] = b; 
 }
 
-// void refresh(Autonoma* c){
-//    for(int n = 0; n<H*W; ++n) 
-//    { 
-//       Vector ra = c->camera.forward+((double)(n%W)/W-.5)*((c->camera.right))+(.5-(double)(n/W)/H)*((c->camera.up));
-//       calcColor(&DATA[3*n], c, Ray(c->camera.focus, ra), 0);
-//    }
-// }
-void refresh(Autonoma* c) {
-   #pragma omp parallel for schedule(dynamic)
-   for(int n = 0; n < H*W; ++n) {
-      Vector ra = c->camera.forward
-                  + ((double)(n % W)/W - 0.5) * (c->camera.right)
-                  + (0.5 - (double)(n / W)/H) * (c->camera.up);
+void refresh(Autonoma* c){
+   for(int n = 0; n<H*W; ++n) 
+   { 
+      Vector ra = c->camera.forward+((double)(n%W)/W-.5)*((c->camera.right))+(.5-(double)(n/W)/H)*((c->camera.up));
       calcColor(&DATA[3*n], c, Ray(c->camera.focus, ra), 0);
    }
 }
