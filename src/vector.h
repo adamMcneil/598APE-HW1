@@ -72,6 +72,26 @@ inline Vector operator/(const float a, const Vector b) {
   return Vector(a / b.x, a / b.y, a / b.z);
 }
 
+#define COMPUTE_DENOM(v1, v2, v3) \
+    ((v1).z * (v2).y * (v3).x - (v1).y * (v2).z * (v3).x - \
+     (v1).z * (v2).x * (v3).y + (v1).x * (v2).z * (v3).y + \
+     (v1).y * (v2).x * (v3).z - (v1).x * (v2).y * (v3).z)
+
+#define COMPUTE_X(v2, v3, C, denom) \
+    (((C).z * (v2).y * (v3).x - (C).y * (v2).z * (v3).x - \
+      (C).z * (v2).x * (v3).y + (C).x * (v2).z * (v3).y + \
+      (C).y * (v2).x * (v3).z - (C).x * (v2).y * (v3).z) / (denom))
+
+#define COMPUTE_Y(v1, v3, C, denom) \
+    (((-C).z * (v1).y * (v3).x + (C).y * (v1).z * (v3).x + \
+      (C).z * (v1).x * (v3).y - (C).x * (v1).z * (v3).y - \
+      (C).y * (v1).x * (v3).z + (C).x * (v1).y * (v3).z) / (denom))
+
+#define COMPUTE_Z(v1, v2, C, denom) \
+    (((C).z * (v1).y * (v2).x - (C).y * (v1).z * (v2).x - \
+      (C).z * (v1).x * (v2).y + (C).x * (v1).z * (v2).y + \
+      (C).y * (v1).x * (v2).z - (C).x * (v1).y * (v2).z) / (denom))
+
 double computeDenom(const Vector v1, const Vector v2, const Vector v3);
 
 double computeX(const Vector v2, const Vector v3, const Vector C,

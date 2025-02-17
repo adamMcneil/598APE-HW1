@@ -14,13 +14,13 @@ double Box::getIntersection(Ray ray) {
     return time;
   }
 
-  double denom = computeDenom(right, up, vect);
+  double denom = COMPUTE_DENOM(right, up, vect);
   Vector C = ray.point + ray.vector * time - center;
-  double x = computeX(up, vect, C, denom);
+  double x = COMPUTE_X(up, vect, C, denom);
   if (x > textureX / 2 || x < -textureX / 2) {
     return inf;
   }
-  double y = computeY(right, vect, C, denom);
+  double y = COMPUTE_Y(right, vect, C, denom);
   if (y > textureY / 2 || y < -textureY / 2) {
     return inf;
   }
@@ -35,13 +35,13 @@ bool Box::getLightIntersection(Ray ray, double *fill) {
     return false;
   }
 
-  double denom = computeDenom(right, up, vect);
+  double denom = COMPUTE_DENOM(right, up, vect);
   Vector C = ray.point + ray.vector * r - center;
-  double x = computeX(up, vect, C, denom);
+  double x = COMPUTE_X(up, vect, C, denom);
   if (x > textureX / 2 || x < -textureX / 2) {
     return false;
   }
-  double y = computeY(right, vect, C, denom);
+  double y = COMPUTE_Y(right, vect, C, denom);
   if (y > textureY / 2 || y < -textureY / 2) {
     return false;
   }
